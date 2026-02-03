@@ -1,0 +1,5 @@
+__pycache__/
+*.tmp
+data/*.json
+!data/.keep
+.venv

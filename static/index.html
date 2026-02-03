@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evolutionary Mock Suite</title>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #121212;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .panel {
+            background: #1e1e1e;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            border: 1px solid #333;
+        }
+
+        h1 {
+            margin: 0 0 20px 0;
+            color: #00d4ff;
+            font-size: 24px;
+        }
+
+        h2 {
+            font-size: 18px;
+            color: #aaa;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 5px;
+        }
+
+        /* Controls */
+        .control-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        input[type=range] {
+            width: 100%;
+            accent-color: #ff4757;
+        }
+
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #2d2d2d;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .btn {
+            background: #00d4ff;
+            color: #121212;
+            border: none;
+            padding: 10px 15px;
+            width: 100%;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn:hover {
+            background: #40e0ff;
+        }
+
+        .btn.test {
+            background: #ff4757;
+            color: white;
+            margin-top: 10px;
+        }
+
+        /* Stats */
+        .val-large {
+            font-size: 32px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .val-sub {
+            font-size: 14px;
+            color: #888;
+        }
+
+        /* Logs */
+        .log-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .log-table th {
+            text-align: left;
+            color: #888;
+            padding: 10px;
+            border-bottom: 1px solid #333;
+        }
+
+        .log-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #252525;
+            color: #ccc;
+        }
+
+        .status-ok {
+            color: #0f0;
+        }
+
+        .status-err {
+            color: #f00;
+        }
+
+        .badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .badge-ai {
+            background: #2b1d52;
+            color: #a48eff;
+            border: 1px solid #5643a0;
+        }
+
+        .badge-real {
+            background: #163016;
+            color: #5cb85c;
+            border: 1px solid #2d5a2d;
+        }
+
+        .badge-proxy {
+            background: #3d3d3d;
+            color: #aaa;
+        }
+
+        #logContainer {
+            height: 350px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+
+        #chartContainer {
+            height: 250px;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="grid">
+        <!-- Controls Panel -->
+        <div class="panel">
+            <h1>🔧 Control Deck</h1>
+
+            <div class="control-group">
+                <h2>Chaos Engine</h2>
+                <div class="val-large"><span id="chaosVal">0</span>%</div>
+                <input type="range" min="0" max="100" value="0" id="chaosRange">
+                <div class="val-sub">Artificial Failure Probability</div>
+            </div>
+
+            <div class="control-group">
+                <h2>Environment</h2>
+
+                <div class="toggle-switch">
+                    <span>🧠 Learning Mode</span>
+                    <input type="checkbox" id="learningToggle">
+                </div>
+                <div class="val-sub" style="margin-top:-5px; margin-bottom: 10px;">Auto-update model from real traffic
+                </div>
+
+                <div class="toggle-switch">
+                    <span>🛡️ Mock Admin</span>
+                    <span>Active</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h2>Test Console</h2>
+                <button class="btn test" onclick="sendTestRequest()">Rocket Fire (Mock)</button>
+                <div style="margin-top: 5px;"></div>
+                <button class="btn" onclick="sendProxyRequest()">Ghost Fire (Proxy)</button>
+            </div>
+        </div>
+
+        <!-- Visualization & Logs -->
+        <div class="panel" style="padding: 0; overflow: hidden; display: flex; flex-direction: column;">
+
+            <div style="padding: 20px; border-bottom: 1px solid #333; background: #252525;">
+                <h2 style="margin:0; border:none;">📊 Latency Monitor</h2>
+            </div>
+
+            <div style="padding: 20px;">
+                <canvas id="latencyChart" style="height: 200px; max-height: 200px; width: 100%;"></canvas>
+            </div>
+
+            <div
+                style="padding: 10px 20px; border-top: 1px solid #333; background: #252525; border-bottom: 1px solid #333;">
+                <h2 style="margin:0; border:none; font-size: 14px;">📡 Live Stream</h2>
+            </div>
+
+            <div id="logContainer">
+                <table class="log-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Type</th>
+                            <th>Method</th>
+                            <th>Status</th>
+                            <th>Latency</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logBody">
+                        <!-- Logs go here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const slider = document.getElementById("chaosRange");
+        const output = document.getElementById("chaosVal");
+        const learningToggle = document.getElementById("learningToggle");
+        const logBody = document.getElementById("logBody");
+        const ctx = document.getElementById('latencyChart').getContext('2d');
+
+        // Chart.js Setup
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Mock Latency (AI)',
+                        borderColor: '#a48eff',
+                        backgroundColor: 'rgba(164, 142, 255, 0.1)',
+                        data: [],
+                        tension: 0.3
+                    },
+                    {
+                        label: 'Real Latency (Proxy)',
+                        borderColor: '#5cb85c',
+                        backgroundColor: 'rgba(92, 184, 92, 0.1)',
+                        data: [],
+                        tension: 0.3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { display: false },
+                    y: { beginAtZero: true, grid: { color: '#333' } }
+                },
+                plugins: {
+                    legend: { labels: { color: '#ccc' } }
+                }
+            }
+        });
+
+        function updateChart(latency, type) {
+            const now = new Date().toLocaleTimeString();
+
+            // Remove old data if > 20 points
+            if (chart.data.labels.length > 20) {
+                chart.data.labels.shift();
+                chart.data.datasets[0].data.shift();
+                chart.data.datasets[1].data.shift();
+            }
+
+            chart.data.labels.push(now);
+
+            if (type === "Mock") {
+                chart.data.datasets[0].data.push(latency);
+                chart.data.datasets[1].data.push(null); // Gap for other line
+            } else {
+                chart.data.datasets[0].data.push(null);
+                chart.data.datasets[1].data.push(latency);
+            }
+
+            chart.update();
+        }
+
+        // Init
+        syncConfig();
+
+        // Event Listeners
+        slider.onchange = async function () {
+            output.innerHTML = this.value;
+            await fetch('/admin/chaos', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ level: this.value })
+            });
+        }
+
+        slider.oninput = function () { output.innerHTML = this.value; }
+
+        learningToggle.onchange = async function () {
+            await fetch('/admin/learning', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: this.checked })
+            });
+        }
+
+        async function syncConfig() {
+            try {
+                const res = await fetch('/admin/config');
+                const data = await res.json();
+                slider.value = data.chaos_level;
+                output.innerHTML = data.chaos_level;
+                learningToggle.checked = data.learning_mode;
+            } catch (e) { console.error("Sync failed", e); }
+        }
+
+        async function sendTestRequest() {
+            const res = await req('/api/v1/payment', { 'X-Mock-Enabled': 'true' });
+            addLog(res, "Mock");
+        }
+
+        async function sendProxyRequest() {
+            const res = await req('/api/v1/payment', { 'X-Mock-Enabled': 'false' });
+            addLog(res, "Proxy");
+        }
+
+        async function req(url, headers) {
+            const start = Date.now();
+            let status = 0;
+            let data = {};
+            try {
+                const r = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...headers },
+                    body: JSON.stringify({ amount: 50, currency: "USD" })
+                });
+                status = r.status;
+                data = await r.json();
+            } catch (e) {
+                status = "ERR";
+            }
+            const lat = Date.now() - start;
+            return { status, lat, data };
+        }
+
+        function addLog(res, type) {
+            const row = document.createElement("tr");
+            const time = new Date().toLocaleTimeString();
+            const statusClass = (res.status >= 200 && res.status < 300) ? "status-ok" : "status-err";
+            const badgeClass = type === "Mock" ? "badge-ai" : "badge-real";
+
+            row.innerHTML = `
+            <td>${time}</td>
+            <td><span class="badge ${badgeClass}">${type}</span></td>
+            <td>POST</td>
+            <td class="${statusClass}">${res.status}</td>
+            <td>${res.lat} ms</td>
+        `;
+
+            logBody.insertBefore(row, logBody.firstChild);
+            if (logBody.children.length > 50) logBody.removeChild(logBody.lastChild);
+
+            updateChart(res.lat, type);
+        }
+
+    </script>
+
+</body>
+
+</html>
