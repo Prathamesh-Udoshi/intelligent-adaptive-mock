@@ -1,2 +1,7 @@
-flask
-requests
+fastapi
+uvicorn
+sqlalchemy[asyncio]
+aiosqlite
+httpx
+pydantic
+numpy
