@@ -203,9 +203,20 @@
 
             <div class="control-group">
                 <h2>Test Console</h2>
+                <select id="endpointSelect"
+                    style="width: 100%; background: #2d2d2d; color: white; border: 1px solid #444; padding: 8px; border-radius: 6px; margin-bottom: 10px;">
+                    <option value="/api/v1/payment">/api/v1/payment (POST)</option>
+                    <option value="/api/v1/users/123">/api/v1/users/123 (GET)</option>
+                    <option value="/api/v1/products">/api/v1/products (GET)</option>
+                    <option value="/api/v1/orders">/api/v1/orders (POST)</option>
+                </select>
                 <button class="btn test" onclick="sendTestRequest()">Rocket Fire (Mock)</button>
                 <div style="margin-top: 5px;"></div>
                 <button class="btn" onclick="sendProxyRequest()">Ghost Fire (Proxy)</button>
+                <div style="margin-top: 15px;">
+                    <button class="btn" style="background: #333; color: #aaa;"
+                        onclick="window.open('/admin/endpoints', '_blank')">View Learned Endpoints</button>
+                </div>
             </div>
         </div>
 
@@ -343,25 +354,32 @@
         }
 
         async function sendTestRequest() {
-            const res = await req('/api/v1/payment', { 'X-Mock-Enabled': 'true' });
-            addLog(res, "Mock");
+            const ep = document.getElementById("endpointSelect").value;
+            const res = await req(ep, { 'X-Mock-Enabled': 'true' });
+            addLog(res, "Mock", ep);
         }
 
         async function sendProxyRequest() {
-            const res = await req('/api/v1/payment', { 'X-Mock-Enabled': 'false' });
-            addLog(res, "Proxy");
+            const ep = document.getElementById("endpointSelect").value;
+            const res = await req(ep, { 'X-Mock-Enabled': 'false' });
+            addLog(res, "Proxy", ep);
         }
 
         async function req(url, headers) {
             const start = Date.now();
             let status = 0;
             let data = {};
+            const method = (url.includes("payment") || url.includes("orders")) ? "POST" : "GET";
             try {
-                const r = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', ...headers },
-                    body: JSON.stringify({ amount: 50, currency: "USD" })
-                });
+                const fetchOpts = {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json', ...headers }
+                };
+                if (method === "POST") {
+                    fetchOpts.body = JSON.stringify({ amount: 50, currency: "USD" });
+                }
+
+                const r = await fetch(url, fetchOpts);
                 status = r.status;
                 data = await r.json();
             } catch (e) {
@@ -371,16 +389,17 @@
             return { status, lat, data };
         }
 
-        function addLog(res, type) {
+        function addLog(res, type, path) {
             const row = document.createElement("tr");
             const time = new Date().toLocaleTimeString();
             const statusClass = (res.status >= 200 && res.status < 300) ? "status-ok" : "status-err";
             const badgeClass = type === "Mock" ? "badge-ai" : "badge-real";
+            const method = (path.includes("payment") || path.includes("orders")) ? "POST" : "GET";
 
             row.innerHTML = `
             <td>${time}</td>
             <td><span class="badge ${badgeClass}">${type}</span></td>
-            <td>POST</td>
+            <td>${method} ${path}</td>
             <td class="${statusClass}">${res.status}</td>
             <td>${res.lat} ms</td>
         `;
