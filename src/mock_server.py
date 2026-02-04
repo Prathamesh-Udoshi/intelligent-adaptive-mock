@@ -1,217 +1,305 @@
-import json
-import random
-import time
-import datetime
 import os
-import requests
-from flask import Flask, request, jsonify, send_file, make_response
-import threading
+import time
+import random
+import asyncio
+import datetime
+from typing import List, Dict, Any, Optional
 
-app = Flask(__name__)
+import httpx
+from fastapi import FastAPI, Request, Response, BackgroundTasks, HTTPException
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select, update
+
+from models import Base, Endpoint, EndpointBehavior, ChaosConfig
+from utils.normalization import normalize_path
+from utils.schema_learner import learn_schema, generate_mock_response
 
 # Config
-# Default to httpbin base for generic testing
-TARGET_URL = os.environ.get("TARGET_URL", "http://httpbin.org") 
-LEARNING_MODE = False
-CHAOS_LEVEL = 0
-REAL_REQUEST_BUFFER = []
-
-# Paths
+TARGET_URL = os.environ.get("TARGET_URL", "http://httpbin.org")
+DB_NAME = os.environ.get("DB_NAME", "mock_platform.db")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, '..', 'data')
-STATIC_DIR = os.path.join(BASE_DIR, '..', 'static')
-MODEL_FILE = os.path.join(DATA_DIR, "behavior_model.json")
+DB_PATH = os.path.join(BASE_DIR, "..", "data", DB_NAME)
+DB_URL = f"sqlite+aiosqlite:///{DB_PATH}"
+LEARNING_BUFFER_SIZE = 10
 
-# Load Model
-try:
-    with open(MODEL_FILE, "r") as f:
-        MODEL = json.load(f)
-        print("Loaded behavior model:", MODEL)
-except FileNotFoundError:
-    print(f"WARNING: {MODEL_FILE} not found. Using defaults.")
-    MODEL = {
-        "error_rate": 0.1,
-        "prob_slow_friday": 0.1,
-        "prob_slow_normal": 0.05,
-        "base_latency": {"mean": 200, "stdev": 50},
-        "slow_latency": {"mean": 1000, "stdev": 200}
+app = FastAPI(title="Intelligent Adaptive Mock Platform")
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# DB Setup
+engine = create_async_engine(DB_URL, echo=False)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+# Global Learning Buffer
+LEARNING_BUFFER = []
+buffer_lock = asyncio.Lock()
+
+@app.on_event("startup")
+async def startup():
+    if not os.path.exists("./data"):
+        os.makedirs("./data")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+# --- Dashboard & Legacy Admin Shims ---
+
+@app.get("/")
+async def get_dashboard():
+    dashboard_path = os.path.join(BASE_DIR, "..", "static", "index.html")
+    if os.path.exists(dashboard_path):
+        return FileResponse(dashboard_path)
+    return JSONResponse({"error": "Dashboard index.html not found"}, status_code=404)
+
+@app.get("/admin/config")
+async def get_config_shim():
+    # Return basic config for the dashboard to initialize
+    return {
+        "chaos_level": 0,
+        "learning_mode": True,
+        "target_url": TARGET_URL
     }
 
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Headers'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = '*'
-    return response
+@app.post("/admin/chaos")
+async def set_chaos_shim(request: Request):
+    # This shim updates all endpoints to simplify dashboard usage for now
+    data = await request.json()
+    level = data.get("level", 0)
+    async with AsyncSessionLocal() as session:
+        await session.execute(update(ChaosConfig).values(chaos_level=level, is_active=True))
+        await session.commit()
+    return {"status": "updated_globally", "level": level}
 
-@app.route('/', methods=['GET'])
-def get_dashboard():
-    index_path = os.path.join(STATIC_DIR, "index.html")
-    if os.path.exists(index_path):
-        return send_file(index_path)
-    return "<h1>Dashboard not found</h1>"
-
-# --- Admin API ---
-
-@app.route('/admin/chaos', methods=['POST', 'OPTIONS'])
-def set_chaos():
-    if request.method == 'OPTIONS':
-        return add_cors_headers(make_response())
-    
-    global CHAOS_LEVEL
-    data = request.json
-    if data and 'level' in data:
-        CHAOS_LEVEL = int(data['level'])
-        return add_cors_headers(jsonify({"status": "updated", "chaos_level": CHAOS_LEVEL}))
-    return add_cors_headers(jsonify({"error": "Invalid data"}), 400)
-
-@app.route('/admin/config', methods=['GET'])
-def get_config():
-    return jsonify({
-        "chaos_level": CHAOS_LEVEL,
-        "learning_mode": LEARNING_MODE,
-        "target_url": TARGET_URL
-    })
-
-@app.route('/admin/learning', methods=['POST'])
-def set_learning():
-    global LEARNING_MODE
-    data = request.json
-    if data and 'enabled' in data:
-        LEARNING_MODE = bool(data['enabled'])
-        return jsonify({"status": "updated", "learning_mode": LEARNING_MODE})
-    return jsonify({"error": "Invalid data"}), 400
+@app.post("/admin/learning")
+async def set_learning_shim(request: Request):
+    return {"status": "learning_mode_unsupported_globally_use_per_request"}
 
 # --- Core Logic ---
 
-# Catch-all route for any subpath and any method
-@app.route('/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])
-def handle_universal_request(subpath):
-    if request.method == 'OPTIONS':
-        return add_cors_headers(make_response())
+async def get_or_create_endpoint(session: AsyncSession, method: str, path_pattern: str):
+    result = await session.execute(
+        select(Endpoint).where(Endpoint.method == method, Endpoint.path_pattern == path_pattern)
+    )
+    endpoint = result.scalars().first()
+    
+    if not endpoint:
+        endpoint = Endpoint(method=method, path_pattern=path_pattern, target_url=TARGET_URL)
+        session.add(endpoint)
+        await session.flush()
+        
+        behavior = EndpointBehavior(endpoint_id=endpoint.id)
+        chaos = ChaosConfig(endpoint_id=endpoint.id)
+        session.add(behavior)
+        session.add(chaos)
+        await session.commit()
+        
+    return endpoint
 
+async def process_learning_buffer():
+    global LEARNING_BUFFER
+    async with buffer_lock:
+        if len(LEARNING_BUFFER) < LEARNING_BUFFER_SIZE:
+            return
+        batch = LEARNING_BUFFER[:]
+        LEARNING_BUFFER = []
+
+    async with AsyncSessionLocal() as session:
+        for item in batch:
+            method = item['method']
+            path_pattern = item['path_pattern']
+            status = item['status']
+            latency = item['latency']
+            body = item['body']
+            
+            endpoint = await get_or_create_endpoint(session, method, path_pattern)
+            behavior_res = await session.execute(
+                select(EndpointBehavior).where(EndpointBehavior.endpoint_id == endpoint.id)
+            )
+            behavior = behavior_res.scalars().first()
+            
+            # Update EMA for Latency
+            alpha = 0.1
+            behavior.latency_mean = (behavior.latency_mean * (1 - alpha)) + (latency * alpha)
+            
+            # Update status code distributions
+            dist = behavior.status_code_distribution or {}
+            status_str = str(status)
+            for k in dist.keys():
+                dist[k] *= (1 - alpha)
+            dist[status_str] = dist.get(status_str, 0) + alpha
+            
+            # Normalize distribution
+            total = sum(dist.values())
+            behavior.status_code_distribution = {k: v/total for k, v in dist.items()}
+            
+            # Update Error Rate (e.g. 5xx status codes)
+            is_error = 1.0 if status >= 500 else 0.0
+            behavior.error_rate = (behavior.error_rate * (1 - alpha)) + (is_error * alpha)
+            
+            # Learn Schema
+            if status < 300 and body:
+                behavior.response_schema = learn_schema(behavior.response_schema, body)
+            
+            session.add(behavior)
+        
+        await session.commit()
+
+# --- Admin API ---
+
+@app.get("/admin/endpoints")
+async def list_endpoints():
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(Endpoint))
+        endpoints = res.scalars().all()
+        return endpoints
+
+@app.get("/admin/endpoints/{endpoint_id}/stats")
+async def get_endpoint_stats(endpoint_id: int):
+    async with AsyncSessionLocal() as session:
+        b_res = await session.execute(select(EndpointBehavior).where(EndpointBehavior.endpoint_id == endpoint_id))
+        behavior = b_res.scalars().first()
+        c_res = await session.execute(select(ChaosConfig).where(ChaosConfig.endpoint_id == endpoint_id))
+        chaos = c_res.scalars().first()
+        
+        if not behavior:
+            raise HTTPException(status_code=404, detail="Endpoint not found")
+            
+        return {
+            "behavior": {
+                "latency_mean": behavior.latency_mean,
+                "error_rate": behavior.error_rate,
+                "status_codes": behavior.status_code_distribution,
+                "schema_preview": behavior.response_schema
+            },
+            "chaos": {
+                "level": chaos.chaos_level,
+                "active": chaos.is_active
+            }
+        }
+
+@app.post("/admin/endpoints/{endpoint_id}/chaos")
+async def configure_chaos(endpoint_id: int, config: Dict[str, Any]):
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            update(ChaosConfig)
+            .where(ChaosConfig.endpoint_id == endpoint_id)
+            .values(
+                chaos_level=config.get("level", 0),
+                is_active=config.get("active", False)
+            )
+        )
+        await session.commit()
+        return {"status": "updated"}
+
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+async def catch_all(request: Request, path: str, background_tasks: BackgroundTasks):
+    method = request.method
+    normalized = normalize_path(f"/{path}")
     mock_enabled = request.headers.get("X-Mock-Enabled", "false").lower() == "true"
     
-    # 1. PROXY MODE
-    if not mock_enabled:
-        start_time = time.time()
-        try:
-            # Construct Target URL
-            target_full_url = f"{TARGET_URL}/{subpath}"
+    if method == "OPTIONS":
+        return Response(status_code=200)
+
+    async with AsyncSessionLocal() as session:
+        endpoint = await get_or_create_endpoint(session, method, normalized)
+        behavior_res = await session.execute(
+            select(EndpointBehavior).where(EndpointBehavior.endpoint_id == endpoint.id)
+        )
+        behavior = behavior_res.scalars().first()
+        
+        chaos_res = await session.execute(
+            select(ChaosConfig).where(ChaosConfig.endpoint_id == endpoint.id)
+        )
+        chaos = chaos_res.scalars().first()
+
+    # 1. MOCK MODE
+    if mock_enabled:
+        # Apply Chaos
+        effective_chaos = chaos.chaos_level if chaos.is_active else 0
+        
+        # Override via header
+        header_chaos = request.headers.get("X-Chaos-Level")
+        if header_chaos:
+            effective_chaos = int(header_chaos)
+
+        # Decide Error vs Success
+        error_prob = behavior.error_rate + (effective_chaos / 100.0)
+        if random.random() < min(error_prob, 0.9):
+            # Simulate Failure
+            return JSONResponse(
+                content={"error": "Chaos Injected", "endpoint": normalized},
+                status_code=500
+            )
+
+        # Simulate Latency
+        latency = behavior.latency_mean + (effective_chaos * 10) # Simple chaos-latency link
+        await asyncio.sleep(latency / 1000.0)
+        
+        # Choose Status Code from distribution
+        codes = list(behavior.status_code_distribution.keys())
+        probs = list(behavior.status_code_distribution.values())
+        status_code = int(random.choices(codes, weights=probs)[0]) if codes else 200
+        
+        # Generate Body
+        mock_body = generate_mock_response(behavior.response_schema)
+        
+        return JSONResponse(content=mock_body, status_code=status_code)
+
+    # 2. PROXY MODE
+    target_full_url = f"{TARGET_URL}/{path}"
+    start_time = time.time()
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            # Prepare headers (exclude Host)
+            headers = {k: v for k, v in request.headers.items() if k.lower() != 'host'}
             
-            # Forward Request
-            # We use request.get_data() to allow binary bodies too
-            resp = requests.request(
-                method=request.method,
+            proxy_resp = await client.request(
+                method=method,
                 url=target_full_url,
-                headers={k:v for k,v in request.headers if k != 'Host'},
-                data=request.get_data(),
-                params=request.args,
-                allow_redirects=False
+                headers=headers,
+                params=dict(request.query_params),
+                content=await request.body(),
+                follow_redirects=False
             )
             
-            latency_ms = (time.time() - start_time) * 1000
-            
-            if LEARNING_MODE:
-                REAL_REQUEST_BUFFER.append({
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "status": resp.status_code,
-                    "latency_ms": latency_ms
-                })
-                if len(REAL_REQUEST_BUFFER) >= 50:
-                    threading.Thread(target=learn_from_buffer).start()
-
-            flask_resp = make_response(resp.content, resp.status_code)
-            for k,v in resp.headers.items():
-                if k not in ['Content-Length', 'Transfer-Encoding', 'Content-Encoding']:
-                     flask_resp.headers[k] = v
-            return add_cors_headers(flask_resp)
-            
-        except Exception as e:
-            return add_cors_headers(jsonify({"error": f"Proxy Error to {target_full_url}: {str(e)}"}), 502)
-
-    # 2. MOCK MODE
-    # For now, apply the generic chaos logic to ALL endpoints.
-    # ideally, we would look up specific mock data for 'subpath'.
-    
-    req_chaos = CHAOS_LEVEL
-    if request.args.get('chaos'):
+        latency_ms = (time.time() - start_time) * 1000
+        
+        # Buffer for background learning
         try:
-            req_chaos = int(request.args.get('chaos'))
-        except ValueError:
-            pass
-    elif request.headers.get('x-chaos-level'):
-        try:
-            req_chaos = int(request.headers.get('x-chaos-level'))
-        except ValueError:
-            pass
+            body_json = proxy_resp.json()
+        except:
+            body_json = None
             
-    is_friday = datetime.datetime.now().weekday() == 4
-    current_error_prob = MODEL["error_rate"] + (req_chaos / 100.0)
-    
-    if random.random() < current_error_prob:
-        resp = make_response(jsonify({"error": f"Simulated Failure for /{subpath}"}), 500)
-        return add_cors_headers(resp)
+        async with buffer_lock:
+            LEARNING_BUFFER.append({
+                "method": method,
+                "path_pattern": normalized,
+                "status": proxy_resp.status_code,
+                "latency": latency_ms,
+                "body": body_json
+            })
+            if len(LEARNING_BUFFER) >= LEARNING_BUFFER_SIZE:
+                background_tasks.add_task(process_learning_buffer)
         
-    current_slow_prob = MODEL["prob_slow_friday"] if is_friday else MODEL["prob_slow_normal"]
-    current_slow_prob += (req_chaos / 100.0)
-    
-    if random.random() < current_slow_prob:
-        mu = MODEL["slow_latency"]["mean"]
-        sigma = MODEL["slow_latency"]["stdev"]
-        latency = random.normalvariate(mu, sigma)
-    else:
-        mu = MODEL["base_latency"]["mean"]
-        sigma = MODEL["base_latency"]["stdev"]
-        latency = random.normalvariate(mu, sigma)
-        
-    latency = max(10, latency)
-    time.sleep(latency / 1000.0)
-    
-    # Generic Success Response
-    resp = jsonify({
-        "status": "success",
-        "mock_path": subpath,
-        "method": request.method,
-        "simulated_latency_ms": round(latency, 2),
-        "chaos_level_applied": req_chaos,
-        "source": "AI Mock (Universal)"
-    })
-    return add_cors_headers(resp)
+        return Response(
+            content=proxy_resp.content,
+            status_code=proxy_resp.status_code,
+            headers=dict(proxy_resp.headers)
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Proxy Error: {str(e)}")
 
-def learn_from_buffer():
-    global REAL_REQUEST_BUFFER
-    global MODEL
-    
-    if not REAL_REQUEST_BUFFER:
-        return
-        
-    batch = REAL_REQUEST_BUFFER[:]
-    REAL_REQUEST_BUFFER = []
-    
-    print(f"Learning from {len(batch)} real requests...")
-    
-    alpha = 0.2
-    
-    errors = [1 if r['status'] >= 500 else 0 for r in batch]
-    latencies = [r['latency_ms'] for r in batch if r['status'] < 500]
-    
-    if not latencies:
-        return
-
-    batch_error_rate = sum(errors) / len(batch)
-    batch_mean_latency = sum(latencies) / len(latencies)
-    
-    new_error_rate = (MODEL['error_rate'] * (1-alpha)) + (batch_error_rate * alpha)
-    new_mean_latency = (MODEL['base_latency']['mean'] * (1-alpha)) + (batch_mean_latency * alpha)
-    
-    MODEL['error_rate'] = round(new_error_rate, 4)
-    MODEL['base_latency']['mean'] = round(new_mean_latency, 2)
-    
-    temp_file = MODEL_FILE + ".tmp"
-    with open(temp_file, "w") as f:
-        json.dump(MODEL, f, indent=2)
-    os.replace(temp_file, MODEL_FILE)
-    print("Model updated!", MODEL)
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, debug=True)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
