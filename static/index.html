@@ -186,19 +186,42 @@
             </div>
 
             <div class="control-group">
-                <h2>Environment</h2>
+                <h2>Platform Configuration</h2>
 
                 <div class="toggle-switch">
-                    <span>🧠 Learning Mode</span>
+                    <span>🧠 Global Learning</span>
                     <input type="checkbox" id="learningToggle">
                 </div>
-                <div class="val-sub" style="margin-top:-5px; margin-bottom: 10px;">Auto-update model from real traffic
+                <div class="val-sub" style="margin-top:-5px; margin-bottom: 20px;">Update AI model from Proxy traffic
                 </div>
 
-                <div class="toggle-switch">
-                    <span>🛡️ Mock Admin</span>
-                    <span>Active</span>
+                <div
+                    style="margin-bottom: 5px; color: #888; font-size: 11px; text-transform: uppercase; font-weight: bold;">
+                    Global Operation Mode</div>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <button id="modeProxy" class="btn" style="flex: 1; padding: 6px;" onclick="setMode('proxy')">Ghost
+                        (Proxy)</button>
+                    <button id="modeMock" class="btn" style="flex: 1; padding: 6px;" onclick="setMode('mock')">Rocket
+                        (Mock)</button>
                 </div>
+                <div class="val-sub">Determines behavior for external apps without headers</div>
+            </div>
+
+            <!-- Onboarding Walkthrough -->
+            <div class="control-group" id="walkthroughPanel" style="background: #1e1e1e; border: 1px dashed #444;">
+                <h2 style="color: #a48eff;">🚀 Getting Started</h2>
+                <div style="font-size: 12px; line-height: 1.6; color: #aaa;">
+                    <p><b>1. Ghost Mode (Proxy)</b>: Keep this on while using your real app. The AI 🧠 is watching and
+                        learning patterns.</p>
+                    <p><b>2. Smart Normalization</b>: Notice how <code style="color:#eee;">/users/1</code> becomes <code
+                            style="color:#eee;">/users/{id}</code> in the dropdown below.</p>
+                    <p><b>3. Rocket Mode (Mock)</b>: Turn off your real backend. The Platform will now take over using
+                        its learned behavior!</p>
+                    <p><b>4. Chaos Injection</b>: Slide the bar left to simulate network instability or 500 errors.</p>
+                </div>
+                <button class="btn" onclick="document.getElementById('walkthroughPanel').style.display='none'"
+                    style="background: transparent; border: 1px solid #444; color: #666; font-size: 10px; margin-top: 10px;">Dismiss
+                    Guide</button>
             </div>
 
             <div class="control-group">
@@ -213,6 +236,9 @@
                 <div style="margin-top: 15px;">
                     <button class="btn" style="background: #333; color: #aaa;"
                         onclick="window.open('/admin/endpoints', '_blank')">View Learned Endpoints</button>
+                    <div style="margin-top: 5px;"></div>
+                    <button class="btn" style="background: #2b1d52; color: #a48eff; border: 1px solid #5643a0;"
+                        onclick="window.open('/admin/export-openapi', '_blank')">Export OpenAPI Spec (AI Truth)</button>
                 </div>
             </div>
         </div>
@@ -248,6 +274,23 @@
                         <!-- Logs go here -->
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Schema Inspector Panel -->
+            <div
+                style="background: #1a1a1a; flex: 1; border-top: 1px solid #333; display: flex; flex-direction: column;">
+                <div
+                    style="padding: 10px 20px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center;">
+                    <h2 style="margin:0; border:none; font-size: 14px; color: #a48eff;">🧠 Schema Brain (AI Knowledge)
+                    </h2>
+                    <button class="btn" style="width: auto; padding: 4px 10px; font-size: 11px;"
+                        onclick="saveSchema()">Override AI Knowledge</button>
+                </div>
+                <textarea id="schemaEditor"
+                    style="flex: 1; background: #121212; color: #00ff00; border: none; padding: 15px; font-family: monospace; font-size: 12px; resize: none; overflow-y: auto;"
+                    spellcheck="false">
+/* Select an endpoint to inspect its learned schema */
+                </textarea>
             </div>
         </div>
     </div>
@@ -340,6 +383,77 @@
             });
         }
 
+        async function setMode(mode) {
+            await fetch('/admin/mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: mode })
+            });
+            updateModeUI(mode);
+        }
+
+        function updateModeUI(mode) {
+            const proxyBtn = document.getElementById("modeProxy");
+            const mockBtn = document.getElementById("modeMock");
+
+            if (mode === 'proxy') {
+                proxyBtn.classList.add('active-mode');
+                proxyBtn.style.background = '#5cb85c'; // Green for Proxy
+                mockBtn.classList.remove('active-mode');
+                mockBtn.style.background = '#333';
+            } else {
+                mockBtn.classList.add('active-mode');
+                mockBtn.style.background = '#a48eff'; // Purple for Mock
+                proxyBtn.classList.remove('active-mode');
+                proxyBtn.style.background = '#333';
+            }
+        }
+
+        document.getElementById("endpointSelect").onchange = async function () {
+            await loadEndpointDetails(this.value);
+        };
+
+        async function loadEndpointDetails(pathPattern) {
+            if (!pathPattern) return;
+            try {
+                const res = await fetch('/admin/endpoints');
+                const endpoints = await res.json();
+                const ep = endpoints.find(e => e.path_pattern === pathPattern);
+                if (!ep) return;
+
+                const statsRes = await fetch(`/admin/endpoints/${ep.id}/stats`);
+                const stats = await statsRes.json();
+
+                document.getElementById("schemaEditor").value = JSON.stringify(stats.behavior.schema_preview || {}, null, 4);
+
+                // Also sync chaos for this specific endpoint
+                slider.value = stats.chaos.level;
+                output.innerHTML = stats.chaos.level;
+            } catch (e) { console.error("Failed to load details", e); }
+        }
+
+        async function saveSchema() {
+            const select = document.getElementById("endpointSelect");
+            const pathPattern = select.value;
+            if (!pathPattern) return alert("Select an endpoint first");
+
+            try {
+                const res = await fetch('/admin/endpoints');
+                const endpoints = await res.json();
+                const ep = endpoints.find(e => e.path_pattern === pathPattern);
+
+                const newSchema = JSON.parse(document.getElementById("schemaEditor").value);
+
+                await fetch(`/admin/endpoints/${ep.id}/schema`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newSchema)
+                });
+                alert("AI Knowledge Overridden Successfully!");
+            } catch (e) { alert("Invalid JSON or Save Failed"); }
+        }
+
+
         async function loadEndpoints() {
             try {
                 const res = await fetch('/admin/endpoints');
@@ -359,6 +473,9 @@
                 // Add "Help" option if empty
                 if (endpoints.length === 0) {
                     select.innerHTML = '<option value="">No endpoints learned yet...</option>';
+                } else if (!currentVal) {
+                    // Load details for first endpoint if none selected
+                    await loadEndpointDetails(endpoints[0].path_pattern);
                 }
             } catch (e) { console.error("Failed to load endpoints", e); }
         }
@@ -370,6 +487,7 @@
                 slider.value = data.chaos_level;
                 output.innerHTML = data.chaos_level;
                 learningToggle.checked = data.learning_mode;
+                updateModeUI(data.platform_mode);
                 await loadEndpoints();
             } catch (e) { console.error("Sync failed", e); }
         }
