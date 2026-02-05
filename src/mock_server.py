@@ -40,18 +40,25 @@ app.add_middleware(
 engine = create_async_engine(DB_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+# Global State
+PLATFORM_STATE = {
+    "mode": "proxy", # "proxy" or "mock"
+    "learning_enabled": True
+}
+
 # Global Learning Buffer
 LEARNING_BUFFER = []
 buffer_lock = asyncio.Lock()
 
 @app.on_event("startup")
 async def startup():
-    if not os.path.exists("./data"):
-        os.makedirs("./data")
+    data_dir = os.path.join(BASE_DIR, "..", "data")
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-# --- Dashboard & Legacy Admin Shims ---
+# --- Dashboard & Admin APIs ---
 
 @app.get("/")
 async def get_dashboard():
@@ -61,17 +68,16 @@ async def get_dashboard():
     return JSONResponse({"error": "Dashboard index.html not found"}, status_code=404)
 
 @app.get("/admin/config")
-async def get_config_shim():
-    # Return basic config for the dashboard to initialize
+async def get_config():
     return {
-        "chaos_level": 0,
-        "learning_mode": True,
+        "chaos_level": 0, # Note: This is per-endpoint but we return a generic 0 for init
+        "learning_mode": PLATFORM_STATE["learning_enabled"],
+        "platform_mode": PLATFORM_STATE["mode"],
         "target_url": TARGET_URL
     }
 
 @app.post("/admin/chaos")
-async def set_chaos_shim(request: Request):
-    # This shim updates all endpoints to simplify dashboard usage for now
+async def set_chaos_globally(request: Request):
     data = await request.json()
     level = data.get("level", 0)
     async with AsyncSessionLocal() as session:
@@ -80,8 +86,16 @@ async def set_chaos_shim(request: Request):
     return {"status": "updated_globally", "level": level}
 
 @app.post("/admin/learning")
-async def set_learning_shim(request: Request):
-    return {"status": "learning_mode_unsupported_globally_use_per_request"}
+async def toggle_learning(request: Request):
+    data = await request.json()
+    PLATFORM_STATE["learning_enabled"] = data.get("enabled", True)
+    return {"status": "success", "learning_enabled": PLATFORM_STATE["learning_enabled"]}
+
+@app.post("/admin/mode")
+async def set_platform_mode(request: Request):
+    data = await request.json()
+    PLATFORM_STATE["mode"] = data.get("mode", "proxy")
+    return {"status": "success", "mode": PLATFORM_STATE["mode"]}
 
 # --- Core Logic ---
 
@@ -200,11 +214,64 @@ async def configure_chaos(endpoint_id: int, config: Dict[str, Any]):
         await session.commit()
         return {"status": "updated"}
 
+@app.post("/admin/endpoints/{endpoint_id}/schema")
+async def update_endpoint_schema(endpoint_id: int, schema: Dict[str, Any]):
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            update(EndpointBehavior)
+            .where(EndpointBehavior.endpoint_id == endpoint_id)
+            .values(response_schema=schema)
+        )
+        await session.commit()
+        return {"status": "schema_updated"}
+
+@app.get("/admin/export-openapi")
+async def export_openapi():
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(Endpoint))
+        endpoints = res.scalars().all()
+        
+        paths = {}
+        for ep in endpoints:
+            b_res = await session.execute(select(EndpointBehavior).where(EndpointBehavior.endpoint_id == ep.id))
+            behavior = b_res.scalars().first()
+            
+            p = ep.path_pattern
+            m = ep.method.lower()
+            
+            if p not in paths: paths[p] = {}
+            
+            paths[p][m] = {
+                "summary": f"Inferred {ep.method} for {p}",
+                "responses": {
+                    "200": {
+                        "description": "Learned Success Response",
+                        "content": {
+                            "application/json": {
+                                "example": behavior.response_schema
+                            }
+                        }
+                    }
+                }
+            }
+            
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Inferred API Contract", "version": "1.0.0"},
+            "paths": paths
+        }
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def catch_all(request: Request, path: str, background_tasks: BackgroundTasks):
     method = request.method
     normalized = normalize_path(f"/{path}")
-    mock_enabled = request.headers.get("X-Mock-Enabled", "false").lower() == "true"
+    
+    # Mode Selection: Header > Global State
+    mock_header = request.headers.get("X-Mock-Enabled")
+    if mock_header:
+        mock_enabled = mock_header.lower() == "true"
+    else:
+        mock_enabled = PLATFORM_STATE["mode"] == "mock"
     
     if method == "OPTIONS":
         return Response(status_code=200)
@@ -221,48 +288,17 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
         )
         chaos = chaos_res.scalars().first()
 
-    # 1. MOCK MODE
+    # 1. MOCK MODE (Explicit)
     if mock_enabled:
-        # Apply Chaos
-        effective_chaos = chaos.chaos_level if chaos.is_active else 0
-        
-        # Override via header
-        header_chaos = request.headers.get("X-Chaos-Level")
-        if header_chaos:
-            effective_chaos = int(header_chaos)
+        return await generate_endpoint_mock(behavior, chaos, normalized, request)
 
-        # Decide Error vs Success
-        error_prob = behavior.error_rate + (effective_chaos / 100.0)
-        if random.random() < min(error_prob, 0.9):
-            # Simulate Failure
-            return JSONResponse(
-                content={"error": "Chaos Injected", "endpoint": normalized},
-                status_code=500
-            )
-
-        # Simulate Latency
-        latency = behavior.latency_mean + (effective_chaos * 10) # Simple chaos-latency link
-        await asyncio.sleep(latency / 1000.0)
-        
-        # Choose Status Code from distribution
-        codes = list(behavior.status_code_distribution.keys())
-        probs = list(behavior.status_code_distribution.values())
-        status_code = int(random.choices(codes, weights=probs)[0]) if codes else 200
-        
-        # Generate Body
-        mock_body = generate_mock_response(behavior.response_schema)
-        
-        return JSONResponse(content=mock_body, status_code=status_code)
-
-    # 2. PROXY MODE
+    # 2. PROXY MODE (With Automatic Mock Fallback)
     target_full_url = f"{TARGET_URL}/{path}"
     start_time = time.time()
     
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # Prepare headers (exclude Host)
             headers = {k: v for k, v in request.headers.items() if k.lower() != 'host'}
-            
             proxy_resp = await client.request(
                 method=method,
                 url=target_full_url,
@@ -274,30 +310,67 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
             
         latency_ms = (time.time() - start_time) * 1000
         
-        # Buffer for background learning
         try:
             body_json = proxy_resp.json()
         except:
             body_json = None
             
-        async with buffer_lock:
-            LEARNING_BUFFER.append({
-                "method": method,
-                "path_pattern": normalized,
-                "status": proxy_resp.status_code,
-                "latency": latency_ms,
-                "body": body_json
-            })
-            if len(LEARNING_BUFFER) >= LEARNING_BUFFER_SIZE:
-                background_tasks.add_task(process_learning_buffer)
+        if PLATFORM_STATE["learning_enabled"]:
+            async with buffer_lock:
+                LEARNING_BUFFER.append({
+                    "method": method, "path_pattern": normalized,
+                    "status": proxy_resp.status_code, "latency": latency_ms, "body": body_json
+                })
+                if len(LEARNING_BUFFER) >= LEARNING_BUFFER_SIZE:
+                    background_tasks.add_task(process_learning_buffer)
         
         return Response(
             content=proxy_resp.content,
             status_code=proxy_resp.status_code,
             headers=dict(proxy_resp.headers)
         )
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as e:
+        # AUTOMATIC FAILOVER: Backend is down, serve a mock instead!
+        print(f"⚠️ PROXY FAILED to {TARGET_URL}. Falling back to AI Mock. Error: {str(e)}")
+        return await generate_endpoint_mock(behavior, chaos, normalized, request, is_failover=True)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Proxy Error: {str(e)}")
+
+async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failover=False):
+    # Apply Chaos
+    effective_chaos = chaos.chaos_level if chaos.is_active else 0
+    header_chaos = request.headers.get("X-Chaos-Level")
+    if header_chaos:
+        effective_chaos = int(header_chaos)
+
+    # Decide Error vs Success
+    error_prob = behavior.error_rate + (effective_chaos / 100.0)
+    if random.random() < min(error_prob, 0.9):
+        return JSONResponse(
+            content={"error": "Chaos Injected", "endpoint": normalized, "failover": is_failover},
+            status_code=500
+        )
+
+    # Simulate Latency
+    latency = behavior.latency_mean + (effective_chaos * 10)
+    await asyncio.sleep(latency / 1000.0)
+    
+    # Choose Status Code
+    codes = list(behavior.status_code_distribution.keys())
+    probs = list(behavior.status_code_distribution.values())
+    status_code = int(random.choices(codes, weights=probs)[0]) if codes else 200
+    
+    # Generate Body
+    try:
+        req_body = await request.json()
+    except:
+        req_body = {}
+        
+    mock_body = generate_mock_response(behavior.response_schema, req_body)
+    if isinstance(mock_body, dict) and is_failover:
+        mock_body["_meta"] = "Generated via AI Fallback (Backend Unreachable)"
+        
+    return JSONResponse(content=mock_body, status_code=status_code)
 
 
 if __name__ == "__main__":
