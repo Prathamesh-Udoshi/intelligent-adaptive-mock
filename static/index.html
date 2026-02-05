@@ -205,10 +205,7 @@
                 <h2>Test Console</h2>
                 <select id="endpointSelect"
                     style="width: 100%; background: #2d2d2d; color: white; border: 1px solid #444; padding: 8px; border-radius: 6px; margin-bottom: 10px;">
-                    <option value="/api/v1/payment">/api/v1/payment (POST)</option>
-                    <option value="/api/v1/users/123">/api/v1/users/123 (GET)</option>
-                    <option value="/api/v1/products">/api/v1/products (GET)</option>
-                    <option value="/api/v1/orders">/api/v1/orders (POST)</option>
+                    <!-- Dynamically loaded from /admin/endpoints -->
                 </select>
                 <button class="btn test" onclick="sendTestRequest()">Rocket Fire (Mock)</button>
                 <div style="margin-top: 5px;"></div>
@@ -343,6 +340,29 @@
             });
         }
 
+        async function loadEndpoints() {
+            try {
+                const res = await fetch('/admin/endpoints');
+                const endpoints = await res.json();
+                const select = document.getElementById("endpointSelect");
+                const currentVal = select.value;
+
+                select.innerHTML = "";
+                endpoints.forEach(ep => {
+                    const opt = document.createElement("option");
+                    opt.value = ep.path_pattern;
+                    opt.textContent = `${ep.path_pattern} (${ep.method})`;
+                    if (ep.path_pattern === currentVal) opt.selected = true;
+                    select.appendChild(opt);
+                });
+
+                // Add "Help" option if empty
+                if (endpoints.length === 0) {
+                    select.innerHTML = '<option value="">No endpoints learned yet...</option>';
+                }
+            } catch (e) { console.error("Failed to load endpoints", e); }
+        }
+
         async function syncConfig() {
             try {
                 const res = await fetch('/admin/config');
@@ -350,6 +370,7 @@
                 slider.value = data.chaos_level;
                 output.innerHTML = data.chaos_level;
                 learningToggle.checked = data.learning_mode;
+                await loadEndpoints();
             } catch (e) { console.error("Sync failed", e); }
         }
 
@@ -361,8 +382,11 @@
 
         async function sendProxyRequest() {
             const ep = document.getElementById("endpointSelect").value;
+            if (!ep) return;
             const res = await req(ep, { 'X-Mock-Enabled': 'false' });
             addLog(res, "Proxy", ep);
+            // Refresh in case we learned something new
+            await loadEndpoints();
         }
 
         async function req(url, headers) {
