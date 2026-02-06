@@ -176,9 +176,15 @@
                                 <span class="stat-value" style="font-size: 13px;">${Object.entries(details.behavior.status_codes).map(([k, v]) => `${k}`).join(', ')}</span>
                             </div>
                         </div>
-                        <div style="margin-top: 20px;">
-                            <span class="stat-label">Learned Schema</span>
-                            <pre>${JSON.stringify(details.behavior.schema_preview, null, 2)}</pre>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+                            <div>
+                                <span class="stat-label">Request Schema (Learning)</span>
+                                <pre style="color: #a48eff;">${details.behavior.request_schema ? JSON.stringify(details.behavior.request_schema, null, 2) : '// No request body observed'}</pre>
+                            </div>
+                            <div>
+                                <span class="stat-label">Response Schema (Mock Body)</span>
+                                <pre>${JSON.stringify(details.behavior.schema_preview, null, 2)}</pre>
+                            </div>
                         </div>
                     `;
                     root.appendChild(card);

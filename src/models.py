@@ -32,6 +32,7 @@ class EndpointBehavior(Base):
     
     # Schema info
     response_schema = Column(JSON, nullable=True) # Representative response body/structure
+    request_schema = Column(JSON, nullable=True) # Representative request body/structure
     
     endpoint = relationship("Endpoint", back_populates="behavior")
 

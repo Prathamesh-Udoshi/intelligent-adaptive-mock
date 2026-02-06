@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select, update
+from sqlalchemy import select, update, text
 
 from models import Base, Endpoint, EndpointBehavior, ChaosConfig
 from utils.normalization import normalize_path
@@ -58,6 +58,16 @@ async def startup():
         os.makedirs(data_dir)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    
+    # Simple Auto-Migration: Add request_schema if missing
+    async with engine.connect() as conn:
+        try:
+            await conn.execute(text("ALTER TABLE endpoint_behavior ADD COLUMN request_schema JSON"))
+            await conn.commit()
+            print("✅ Database Migrated: Added 'request_schema' column.")
+        except Exception:
+            # Column likely already exists
+            pass
 
 # --- Dashboard & Admin APIs ---
 
@@ -149,7 +159,8 @@ async def process_learning_buffer():
             path_pattern = item['path_pattern']
             status = item['status']
             latency = item['latency']
-            body = item['body']
+            resp_body = item['response_body']
+            req_body = item['request_body']
             
             endpoint = await get_or_create_endpoint(session, method, path_pattern)
             behavior_res = await session.execute(
@@ -177,8 +188,11 @@ async def process_learning_buffer():
             behavior.error_rate = (behavior.error_rate * (1 - alpha)) + (is_error * alpha)
             
             # Learn Schema
-            if status < 300 and body:
-                behavior.response_schema = learn_schema(behavior.response_schema, body)
+            if status < 300 and resp_body:
+                behavior.response_schema = learn_schema(behavior.response_schema, resp_body)
+            
+            if req_body:
+                behavior.request_schema = learn_schema(behavior.request_schema, req_body)
             
             session.add(behavior)
         
@@ -209,7 +223,8 @@ async def get_endpoint_stats(endpoint_id: int):
                 "latency_mean": behavior.latency_mean,
                 "error_rate": behavior.error_rate,
                 "status_codes": behavior.status_code_distribution,
-                "schema_preview": behavior.response_schema
+                "schema_preview": behavior.response_schema,
+                "request_schema": behavior.request_schema
             },
             "chaos": {
                 "level": chaos.chaos_level,
@@ -284,6 +299,15 @@ async def export_openapi():
                 }
             }
             
+            if behavior.request_schema and m in ['post', 'put', 'patch', 'delete']:
+                paths[p][m]["requestBody"] = {
+                    "content": {
+                        "application/json": {
+                            "example": behavior.request_schema
+                        }
+                    }
+                }
+            
         return {
             "openapi": "3.0.0",
             "info": {
@@ -330,6 +354,13 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
     target_full_url = f"{TARGET_URL}/{path}"
     start_time = time.time()
     
+    # Pre-read request body for learning
+    req_body_bytes = await request.body()
+    try:
+        req_body_json = await request.json() if req_body_bytes else None
+    except:
+        req_body_json = None
+
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             headers = {k: v for k, v in request.headers.items() if k.lower() != 'host'}
@@ -338,22 +369,24 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                 url=target_full_url,
                 headers=headers,
                 params=dict(request.query_params),
-                content=await request.body(),
+                content=req_body_bytes,
                 follow_redirects=False
             )
             
         latency_ms = (time.time() - start_time) * 1000
         
         try:
-            body_json = proxy_resp.json()
+            resp_body_json = proxy_resp.json()
         except:
-            body_json = None
+            resp_body_json = None
             
         if PLATFORM_STATE["learning_enabled"]:
             async with buffer_lock:
                 LEARNING_BUFFER.append({
                     "method": method, "path_pattern": normalized,
-                    "status": proxy_resp.status_code, "latency": latency_ms, "body": body_json
+                    "status": proxy_resp.status_code, "latency": latency_ms, 
+                    "response_body": resp_body_json,
+                    "request_body": req_body_json
                 })
                 if len(LEARNING_BUFFER) >= LEARNING_BUFFER_SIZE:
                     background_tasks.add_task(process_learning_buffer)
