@@ -235,10 +235,14 @@
                 <button class="btn" onclick="sendProxyRequest()">Ghost Fire (Proxy)</button>
                 <div style="margin-top: 15px;">
                     <button class="btn" style="background: #333; color: #aaa;"
-                        onclick="window.open('/admin/endpoints', '_blank')">View Learned Endpoints</button>
+                        onclick="window.open('/admin/explorer', '_blank')">Visual Endpoint Explorer</button>
                     <div style="margin-top: 5px;"></div>
                     <button class="btn" style="background: #2b1d52; color: #a48eff; border: 1px solid #5643a0;"
-                        onclick="window.open('/admin/export-openapi', '_blank')">Export OpenAPI Spec (AI Truth)</button>
+                        onclick="window.open('/admin/docs', '_blank')">Interactive API Docs (Swagger)</button>
+                    <div style="margin-top: 10px; font-size: 10px; text-align: center;">
+                        <a href="/admin/export-openapi" target="_blank" style="color: #444;">Raw JSON Spec</a> |
+                        <a href="/admin/endpoints" target="_blank" style="color: #444;">Raw Endpoints</a>
+                    </div>
                 </div>
             </div>
         </div>
