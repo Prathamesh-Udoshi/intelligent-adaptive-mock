@@ -152,42 +152,65 @@
                 root.innerHTML = '';
 
                 for (const ep of endpoints) {
-                    const statsRes = await fetch(`/admin/endpoints/${ep.id}/stats`);
-                    const details = await statsRes.json();
+                    try {
+                        const statsRes = await fetch(`/admin/endpoints/${ep.id}/stats`);
+                        if (!statsRes.ok) continue;
+                        const details = await statsRes.json();
 
-                    const card = document.createElement('div');
-                    card.className = 'endpoint-card';
-                    card.innerHTML = `
-                        <div style="display: flex; align-items: center; margin-bottom: 15px;">
-                            <span class="method-badge">${ep.method}</span>
-                            <span class="path">${ep.path_pattern}</span>
-                        </div>
-                        <div class="stats-grid">
-                            <div class="stat-item">
-                                <span class="stat-label">Avg Latency</span>
-                                <span class="stat-value">${Math.round(details.behavior.latency_mean)}ms</span>
+                        const card = document.createElement('div');
+                        card.className = 'endpoint-card';
+
+                        const reqSchema = details.behavior.request_schema;
+                        const respSchema = details.behavior.schema_preview;
+
+                        card.innerHTML = `
+                            <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                                <span class="method-badge">${ep.method}</span>
+                                <span class="path">${ep.path_pattern}</span>
                             </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Success Rate</span>
-                                <span class="stat-value">${(100 - (details.behavior.error_rate * 100)).toFixed(1)}%</span>
+                            
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-label">Avg Latency</span>
+                                    <span class="stat-value">${Math.round(details.behavior.latency_mean)}ms</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Success Rate</span>
+                                    <span class="stat-value" style="color: #5cb85c;">${(100 - (details.behavior.error_rate * 100)).toFixed(1)}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Status Distribution</span>
+                                    <div style="display: flex; gap: 5px; margin-top: 5px;">
+                                        ${Object.entries(details.behavior.status_codes).map(([code, prob]) => `
+                                            <span style="font-size: 10px; padding: 2px 6px; background: #222; border-radius: 4px; color: ${code.startsWith('2') ? '#5cb85c' : '#ff4757'}">
+                                                ${code} (${Math.round(prob * 100)}%)
+                                            </span>
+                                        `).join('')}
+                                    </div>
+                                </div>
                             </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Status Codes</span>
-                                <span class="stat-value" style="font-size: 13px;">${Object.entries(details.behavior.status_codes).map(([k, v]) => `${k}`).join(', ')}</span>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 25px;">
+                                <div class="schema-box">
+                                    <div class="stat-label" style="color: #a48eff; margin-bottom: 10px; display: flex; align-items: center; gap: 5px;">
+                                        <span style="width: 8px; height: 8px; background: #a48eff; border-radius: 50%;"></span>
+                                        Inbound Pattern (Request Body)
+                                    </div>
+                                    <pre style="border-left: 3px solid #a48eff; color: #a48eff;">${reqSchema && Object.keys(reqSchema).length > 0 ? JSON.stringify(reqSchema, null, 2) : '// No request structure observed yet'}</pre>
+                                </div>
+                                <div class="schema-box">
+                                    <div class="stat-label" style="color: #5cb85c; margin-bottom: 10px; display: flex; align-items: center; gap: 5px;">
+                                        <span style="width: 8px; height: 8px; background: #5cb85c; border-radius: 50%;"></span>
+                                        Outbound Model (Response Mock)
+                                    </div>
+                                    <pre style="border-left: 3px solid #5cb85c; color: #5cb85c;">${respSchema && Object.keys(respSchema).length > 0 ? JSON.stringify(respSchema, null, 2) : '// No response structure learned yet'}</pre>
+                                </div>
                             </div>
-                        </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
-                            <div>
-                                <span class="stat-label">Request Schema (Learning)</span>
-                                <pre style="color: #a48eff;">${details.behavior.request_schema ? JSON.stringify(details.behavior.request_schema, null, 2) : '// No request body observed'}</pre>
-                            </div>
-                            <div>
-                                <span class="stat-label">Response Schema (Mock Body)</span>
-                                <pre>${JSON.stringify(details.behavior.schema_preview, null, 2)}</pre>
-                            </div>
-                        </div>
-                    `;
-                    root.appendChild(card);
+                        `;
+                        root.appendChild(card);
+                    } catch (err) {
+                        console.error("Error loading endpoint details", err);
+                    }
                 }
             } catch (e) {
                 document.getElementById('explorer-root').innerHTML = '<p style="color: #ff4757;">Failed to load data. Make sure server is running.</p>';

@@ -168,6 +168,30 @@
             height: 250px;
             width: 100%;
         }
+
+        .schema-tab {
+            background: transparent;
+            border: none;
+            color: #999;
+            padding: 12px 18px;
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 700;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            letter-spacing: 0.5px;
+        }
+
+        .schema-tab:hover {
+            color: #aaa;
+        }
+
+        .active-tab {
+            color: #a48eff !important;
+            border-bottom-color: #a48eff;
+            background: rgba(164, 142, 255, 0.05);
+        }
     </style>
 </head>
 
@@ -284,17 +308,25 @@
             <div
                 style="background: #1a1a1a; flex: 1; border-top: 1px solid #333; display: flex; flex-direction: column;">
                 <div
-                    style="padding: 10px 20px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center;">
-                    <h2 style="margin:0; border:none; font-size: 14px; color: #a48eff;">🧠 Schema Brain (AI Knowledge)
-                    </h2>
-                    <button class="btn" style="width: auto; padding: 4px 10px; font-size: 11px;"
-                        onclick="saveSchema()">Override AI Knowledge</button>
+                    style="background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; padding: 0 20px;">
+                    <div style="display: flex; gap: 0;">
+                        <button id="tabInbound" class="schema-tab active-tab"
+                            onclick="switchSchemaTab('inbound')">Inbound (Req)</button>
+                        <button id="tabOutbound" class="schema-tab" onclick="switchSchemaTab('outbound')">Outbound
+                            (Resp)</button>
+                    </div>
+                    <button class="btn" style="width: auto; padding: 4px 10px; font-size: 11px; margin: 10px 0;"
+                        onclick="saveSchema()">Override AI Brain</button>
                 </div>
                 <textarea id="schemaEditor"
-                    style="flex: 1; background: #121212; color: #00ff00; border: none; padding: 15px; font-family: monospace; font-size: 12px; resize: none; overflow-y: auto;"
+                    style="flex: 1; background: #121212; color: #a48eff; border: none; padding: 15px; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; resize: none; overflow-y: auto;"
                     spellcheck="false">
 /* Select an endpoint to inspect its learned schema */
                 </textarea>
+                <div id="schemaMeta"
+                    style="padding: 5px 15px; background: #000; font-size: 10px; color: #555; border-top: 1px solid #222;">
+                    Showing learned structure for current selection
+                </div>
             </div>
         </div>
     </div>
@@ -413,51 +445,92 @@
             }
         }
 
+        let currentEndpointStats = null;
+        let currentSchemaTab = 'outbound';
+
+        // Important: Link the select change event
         document.getElementById("endpointSelect").onchange = async function () {
             await loadEndpointDetails(this.value);
         };
 
-        async function loadEndpointDetails(pathPattern) {
-            if (!pathPattern) return;
+        async function switchSchemaTab(tab) {
+            currentSchemaTab = tab;
+            document.getElementById('tabInbound').classList.toggle('active-tab', tab === 'inbound');
+            document.getElementById('tabOutbound').classList.toggle('active-tab', tab === 'outbound');
+
+            if (!currentEndpointStats) return;
+
+            const editor = document.getElementById("schemaEditor");
+            const meta = document.getElementById("schemaMeta");
+
+            if (tab === 'inbound') {
+                editor.value = JSON.stringify(currentEndpointStats.behavior.request_schema || {}, null, 4);
+                meta.innerText = "Showing INBOUND (Request) structure observed by AI";
+                meta.style.color = "#a48eff";
+                editor.style.color = "#a48eff";
+            } else {
+                editor.value = JSON.stringify(currentEndpointStats.behavior.schema_preview || {}, null, 4);
+                meta.innerText = "Showing OUTBOUND (Response) structure for generating Mocks";
+                meta.style.color = "#5cb85c";
+                editor.style.color = "#5cb85c";
+            }
+        }
+
+        async function loadEndpointDetails(id) {
+            if (!id) return;
             try {
-                const res = await fetch('/admin/endpoints');
-                const endpoints = await res.json();
-                const ep = endpoints.find(e => e.path_pattern === pathPattern);
-                if (!ep) return;
-
-                const statsRes = await fetch(`/admin/endpoints/${ep.id}/stats`);
+                const statsRes = await fetch(`/admin/endpoints/${id}/stats`);
                 const stats = await statsRes.json();
+                currentEndpointStats = stats;
 
-                document.getElementById("schemaEditor").value = JSON.stringify(stats.behavior.schema_preview || {}, null, 4);
+                // Auto-switch to Inbound if it's a POST/PUT
+                const epData = window.endpointData[id];
+                const method = epData ? epData.method : "GET";
+
+                if (['POST', 'PUT', 'PATCH'].includes(method)) {
+                    switchSchemaTab('inbound');
+                } else {
+                    switchSchemaTab('outbound');
+                }
 
                 // Also sync chaos for this specific endpoint
                 slider.value = stats.chaos.level;
                 output.innerHTML = stats.chaos.level;
-            } catch (e) { console.error("Failed to load details", e); }
+            } catch (e) {
+                console.error("Failed to load details", e);
+                document.getElementById("schemaEditor").value = "Failed to load AI knowledge for this endpoint.";
+            }
         }
 
         async function saveSchema() {
-            const select = document.getElementById("endpointSelect");
-            const pathPattern = select.value;
-            if (!pathPattern) return alert("Select an endpoint first");
+            const id = document.getElementById("endpointSelect").value;
+            if (!id) return alert("Select an endpoint first");
 
             try {
-                const res = await fetch('/admin/endpoints');
-                const endpoints = await res.json();
-                const ep = endpoints.find(e => e.path_pattern === pathPattern);
-
                 const newSchema = JSON.parse(document.getElementById("schemaEditor").value);
 
-                await fetch(`/admin/endpoints/${ep.id}/schema`, {
+                await fetch(`/admin/endpoints/${id}/schema`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newSchema)
+                    body: JSON.stringify({
+                        schema: newSchema,
+                        type: currentSchemaTab // 'inbound' or 'outbound'
+                    })
                 });
-                alert("AI Knowledge Overridden Successfully!");
+
+                // Refresh local cache
+                if (currentSchemaTab === 'inbound') {
+                    currentEndpointStats.behavior.request_schema = newSchema;
+                } else {
+                    currentEndpointStats.behavior.schema_preview = newSchema;
+                }
+
+                alert(`AI Brain Updated: ${currentSchemaTab} schema saved.`);
             } catch (e) { alert("Invalid JSON or Save Failed"); }
         }
 
 
+        window.endpointData = {}; // Store {id: {path, method}}
         async function loadEndpoints() {
             try {
                 const res = await fetch('/admin/endpoints');
@@ -467,19 +540,20 @@
 
                 select.innerHTML = "";
                 endpoints.forEach(ep => {
+                    window.endpointData[ep.id] = { path: ep.path_pattern, method: ep.method };
                     const opt = document.createElement("option");
-                    opt.value = ep.path_pattern;
+                    opt.value = ep.id;
                     opt.textContent = `${ep.path_pattern} (${ep.method})`;
-                    if (ep.path_pattern === currentVal) opt.selected = true;
+                    if (ep.id == currentVal) opt.selected = true;
                     select.appendChild(opt);
                 });
 
                 // Add "Help" option if empty
                 if (endpoints.length === 0) {
                     select.innerHTML = '<option value="">No endpoints learned yet...</option>';
-                } else if (!currentVal) {
+                } else if (!currentVal && endpoints.length > 0) {
                     // Load details for first endpoint if none selected
-                    await loadEndpointDetails(endpoints[0].path_pattern);
+                    await loadEndpointDetails(endpoints[0].id);
                 }
             } catch (e) { console.error("Failed to load endpoints", e); }
         }
@@ -497,15 +571,15 @@
         }
 
         async function sendTestRequest() {
-            const ep = document.getElementById("endpointSelect").value;
-            const res = await req(ep, { 'X-Mock-Enabled': 'true' });
-            addLog(res, "Mock", ep);
+            const id = document.getElementById("endpointSelect").value;
+            if (!id) return;
+            await req(id, { 'X-Mock-Enabled': 'true' });
         }
 
         async function sendProxyRequest() {
-            const ep = document.getElementById("endpointSelect").value;
-            if (!ep) return;
-            await req(ep, { 'X-Mock-Enabled': 'false' });
+            const id = document.getElementById("endpointSelect").value;
+            if (!id) return;
+            await req(id, { 'X-Mock-Enabled': 'false' });
             // Refresh in case we learned something new
             await loadEndpoints();
         }
@@ -546,28 +620,33 @@
 
         setInterval(syncLogs, 1500);
 
-        async function req(url, headers) {
+        async function req(id, headers) {
+            const ep = window.endpointData[id];
+            if (!ep) return;
+
+            const method = ep.method;
+            const url = ep.path;
             const start = Date.now();
-            let status = 0;
-            let data = {};
-            const method = (url.includes("payment") || url.includes("orders")) ? "POST" : "GET";
             try {
                 const fetchOpts = {
                     method: method,
                     headers: { 'Content-Type': 'application/json', ...headers }
                 };
-                if (method === "POST") {
-                    fetchOpts.body = JSON.stringify({ amount: 50, currency: "USD" });
+
+                // If it's a data-carrying method, try to use the schema from the editor
+                if (["POST", "PUT", "PATCH"].includes(method)) {
+                    const editorVal = document.getElementById("schemaEditor").value;
+                    try {
+                        fetchOpts.body = editorVal ? editorVal : JSON.stringify({ sample: "data" });
+                    } catch (e) {
+                        fetchOpts.body = JSON.stringify({ sample: "data" });
+                    }
                 }
 
-                const r = await fetch(url, fetchOpts);
-                status = r.status;
-                data = await r.json();
+                await fetch(url, fetchOpts);
             } catch (e) {
-                status = "ERR";
+                console.error("Test request failed", e);
             }
-            const lat = Date.now() - start;
-            return { status, lat, data };
         }
 
     </script>

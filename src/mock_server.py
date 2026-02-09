@@ -24,7 +24,7 @@ DB_NAME = os.environ.get("DB_NAME", "mock_platform.db")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "..", "data", DB_NAME)
 DB_URL = f"sqlite+aiosqlite:///{DB_PATH}"
-LEARNING_BUFFER_SIZE = 10
+LEARNING_BUFFER_SIZE = 1
 
 app = FastAPI(title="Intelligent Adaptive Mock Platform")
 
@@ -267,15 +267,24 @@ async def configure_chaos(endpoint_id: int, config: Dict[str, Any]):
         return {"status": "updated"}
 
 @app.post("/admin/endpoints/{endpoint_id}/schema")
-async def update_endpoint_schema(endpoint_id: int, schema: Dict[str, Any]):
+async def update_endpoint_schema(endpoint_id: int, data: Dict[str, Any]):
+    schema = data.get("schema")
+    schema_type = data.get("type", "outbound") # 'inbound' or 'outbound'
+    
     async with AsyncSessionLocal() as session:
+        update_vals = {}
+        if schema_type == "inbound":
+            update_vals["request_schema"] = schema
+        else:
+            update_vals["response_schema"] = schema
+            
         await session.execute(
             update(EndpointBehavior)
             .where(EndpointBehavior.endpoint_id == endpoint_id)
-            .values(response_schema=schema)
+            .values(**update_vals)
         )
         await session.commit()
-        return {"status": "schema_updated"}
+        return {"status": "schema_updated", "type": schema_type}
 
 @app.get("/admin/export-openapi")
 async def export_openapi():
