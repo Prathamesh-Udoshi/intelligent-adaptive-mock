@@ -505,11 +505,46 @@
         async function sendProxyRequest() {
             const ep = document.getElementById("endpointSelect").value;
             if (!ep) return;
-            const res = await req(ep, { 'X-Mock-Enabled': 'false' });
-            addLog(res, "Proxy", ep);
+            await req(ep, { 'X-Mock-Enabled': 'false' });
             // Refresh in case we learned something new
             await loadEndpoints();
         }
+
+        async function syncLogs() {
+            try {
+                const res = await fetch('/admin/logs');
+                const logs = await res.json();
+
+                // Clear and rebuild log table
+                logBody.innerHTML = "";
+                logs.forEach(log => {
+                    const row = document.createElement("tr");
+                    const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
+                    const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
+
+                    row.innerHTML = `
+                        <td>${log.time}</td>
+                        <td><span class="badge ${badgeClass}">${log.type}</span></td>
+                        <td>${log.method} ${log.path}</td>
+                        <td class="${statusClass}">${log.status}</td>
+                        <td>${log.latency} ms</td>
+                    `;
+                    logBody.appendChild(row);
+                });
+
+                // Update chart with the latest log if it's new
+                if (logs.length > 0) {
+                    const latest = logs[0];
+                    // Simple deduplication for chart (don't add if time/path is same as last)
+                    if (window.lastLogTime !== latest.time) {
+                        updateChart(latest.latency, latest.type);
+                        window.lastLogTime = latest.time;
+                    }
+                }
+            } catch (e) { console.error("Log sync failed", e); }
+        }
+
+        setInterval(syncLogs, 1500);
 
         async function req(url, headers) {
             const start = Date.now();
@@ -533,27 +568,6 @@
             }
             const lat = Date.now() - start;
             return { status, lat, data };
-        }
-
-        function addLog(res, type, path) {
-            const row = document.createElement("tr");
-            const time = new Date().toLocaleTimeString();
-            const statusClass = (res.status >= 200 && res.status < 300) ? "status-ok" : "status-err";
-            const badgeClass = type === "Mock" ? "badge-ai" : "badge-real";
-            const method = (path.includes("payment") || path.includes("orders")) ? "POST" : "GET";
-
-            row.innerHTML = `
-            <td>${time}</td>
-            <td><span class="badge ${badgeClass}">${type}</span></td>
-            <td>${method} ${path}</td>
-            <td class="${statusClass}">${res.status}</td>
-            <td>${res.lat} ms</td>
-        `;
-
-            logBody.insertBefore(row, logBody.firstChild);
-            if (logBody.children.length > 50) logBody.removeChild(logBody.lastChild);
-
-            updateChart(res.lat, type);
         }
 
     </script>

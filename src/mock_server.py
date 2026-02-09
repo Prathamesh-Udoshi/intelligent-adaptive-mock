@@ -49,7 +49,9 @@ PLATFORM_STATE = {
 
 # Global Learning Buffer
 LEARNING_BUFFER = []
+RECENT_LOGS = [] # Store last 50 requests for dashboard monitoring
 buffer_lock = asyncio.Lock()
+logs_lock = asyncio.Lock()
 
 @app.on_event("startup")
 async def startup():
@@ -124,7 +126,25 @@ async def set_platform_mode(request: Request):
     PLATFORM_STATE["mode"] = data.get("mode", "proxy")
     return {"status": "success", "mode": PLATFORM_STATE["mode"]}
 
+@app.get("/admin/logs")
+async def get_recent_logs():
+    async with logs_lock:
+        return RECENT_LOGS
+
 # --- Core Logic ---
+
+async def add_to_logs(method: str, path: str, status: int, latency: int, type: str):
+    async with logs_lock:
+        RECENT_LOGS.insert(0, {
+            "time": datetime.datetime.now().strftime("%H:%M:%S"),
+            "method": method,
+            "path": path,
+            "status": status,
+            "latency": round(latency),
+            "type": type
+        })
+        if len(RECENT_LOGS) > 50:
+            RECENT_LOGS.pop()
 
 async def get_or_create_endpoint(session: AsyncSession, method: str, path_pattern: str):
     result = await session.execute(
@@ -388,9 +408,10 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                     "response_body": resp_body_json,
                     "request_body": req_body_json
                 })
-                if len(LEARNING_BUFFER) >= LEARNING_BUFFER_SIZE:
-                    background_tasks.add_task(process_learning_buffer)
+                background_tasks.add_task(process_learning_buffer)
         
+        await add_to_logs(method, normalized, proxy_resp.status_code, latency_ms, "Proxy")
+
         return Response(
             content=proxy_resp.content,
             status_code=proxy_resp.status_code,
@@ -436,6 +457,9 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
     mock_body = generate_mock_response(behavior.response_schema, req_body)
     if isinstance(mock_body, dict) and is_failover:
         mock_body["_meta"] = "Generated via AI Fallback (Backend Unreachable)"
+    
+    # Log it
+    await add_to_logs(request.method, normalized, status_code, latency, "Mock")
         
     return JSONResponse(content=mock_body, status_code=status_code)
 
