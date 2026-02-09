@@ -4,13 +4,13 @@ A scalable, self-learning "Digital Twin" for backend APIs. This platform sits be
 
 ## 🌟 Key Features
 
-*   **Dual-Intelligence Learning**: Automatically learns both **Request** and **Response** JSON structures for every endpoint, including `POST`, `PUT`, and `PATCH` methods.
-*   **Path Normalization & Parameter Detection**: Identifies dynamic segments (IDs, UUIDs) and automatically extracts them as interactive parameters in documentation.
-*   **Automatic AI Fallback**: Instantly switches to a high-fidelity mock if the target backend is unreachable, ensuring zero frontend downtime.
-*   **Interactive Documentation (Swagger)**: Generates a professional OpenAPI 3.0 spec with a full Swagger UI suite for testing learned endpoints.
-*   **Visual Endpoint Explorer**: A premium dedicated dashboard showing live stats (latency, success rates) and side-by-side schema visualizations.
-*   **AI Brain & Manual Overrides**: Real-time visualization of learned patterns with the ability to manually "teach" the AI new behaviors.
-*   **Schema-Aware Echoing**: Mocks intelligently "echo" data from the request body (e.g., matching IDs) to create highly realistic interactions.
+*   **Dual-Channel Intelligence**: Automatically learns both **Request (Inbound)** and **Response (Outbound)** JSON structures. It builds a complete contract of what your app sends and what it receives.
+*   **Live Traffic Stream**: A unified server-side log that tracks every request from your real frontend, Postman, or the dashboard—synchronized in real-time across the entire platform.
+*   **Direction-Aware Schema Brain**: Separate controls for Inbound patterns and Outbound results. Manually override the AI's knowledge for either side of the transaction.
+*   **Visual Endpoint Explorer**: A premium dedicated dashboard showing live latency trends, success rates, and side-by-side schema visualizations for every discovered route.
+*   **Automatic AI Failover**: Instantly switches to a high-fidelity mock if the target backend is unreachable, ensuring zero frontend downtime during backend maintenance or crashes.
+*   **Path Normalization & Parameter Detection**: Identifies dynamic segments (IDs, UUIDs) and automatically groups them (e.g., `/users/123` → `/users/{id}`).
+*   **Interactive Documentation (Swagger)**: Generates a professional OpenAPI 3.0 spec pre-filled with learned request bodies for one-click testing.
 *   **Self-Healing Database**: Automatic schema migrations ensure your local data stays up-to-date with current platform logic.
 
 ## 🚀 Quick Start
@@ -20,20 +20,20 @@ A scalable, self-learning "Digital Twin" for backend APIs. This platform sits be
    pip install -r requirements.txt
    ```
 
-2. **Run the Platform**:
-   Configure via environment variables to isolate data for different projects.
+2. **Configure and Launch**:
+   Define your target backend and a unique database for your current project.
    ```powershell
-   # Windows PowerShell
+   # Windows PowerShell Example
    $env:TARGET_URL="http://localhost:8001"
-   $env:DB_NAME="my_project.db"
+   $env:DB_NAME="project_alpha.db"
    cd src
    python mock_server.py
    ```
 
 3. **Explore the Interface**:
-   *   **Console Deck**: `http://localhost:8000/` (Traffic & Global Controls)
-   *   **Endpoint Explorer**: `http://localhost:8000/admin/explorer` (Stats & Schemas)
-   *   **API Docs (Swagger)**: `http://localhost:8000/admin/docs` (Interactive Testing)
+   *   **Control Deck**: `http://localhost:8000/` — Manage chaos levels, global modes, and live traffic.
+   *   **Endpoint Explorer**: `http://localhost:8000/admin/explorer` — Deep dive into learned behavior and stats.
+   *   **API Docs (Swagger)**: `http://localhost:8000/admin/docs` — Full interactive testing suite.
 
 ## 🏗 Architecture
 
@@ -53,20 +53,20 @@ graph TD
         Server --> Proxy[Async Proxy / HTTPX]
         Proxy --> Target[Real Backend API]
         Target --> Proxy
-        Proxy -->|If Success| Buffer[Learning Buffer]
+        Proxy -->|Capture Cycle| Buffer[Instant Learning Buffer]
         Proxy -->|If Down| Logic
         Buffer -->|Background Task| Learner[Behavior Learner]
-        Learner -->|Capture Req/Resp| DB
+        Learner -->|Dual-Channel Capture| DB
         Proxy --> Client
     end
 ```
 
 ## 📂 System Design
 
-- **`src/mock_server.py`**: Core FastAPI engine handling Proxy logic, AI Failover, and Automated Migrations.
-- **`src/models.py`**: Data models for behavioral patterns, chaos configuration, and schema storage.
+- **`src/mock_server.py`**: Core FastAPI engine handling Proxy logic, Global State, and Real-time Log Synchronization.
+- **`src/models.py`**: Data models for dual-channel schemas (Request/Response), chaos configuration, and endpoint metadata.
 - **`src/utils/normalization.py`**: Regex engine for grouping dynamic paths and extracting parameters.
-- **`src/utils/schema_learner.py`**: The "AI Brain"—recursive JSON structure analysis and request/response correlation.
+- **`src/utils/schema_learner.py`**: The "AI Brain"—recursive JSON structure analysis and synthetic response generation.
 
 ## 💡 Pro-Tip: Data Isolation
-Run the server with a different `DB_NAME` for every project you test. This keeps your learned patterns clean and allows you to build specific "behavioral profiles" for different services.
+Run the server with a different `DB_NAME` for every project you test. This allows you to build specific "behavioral profiles" for different services and switch between them instantly by changing a single environment variable.
