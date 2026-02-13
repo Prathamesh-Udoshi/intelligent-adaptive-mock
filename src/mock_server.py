@@ -7,7 +7,7 @@ import datetime
 from typing import List, Dict, Any, Optional
 
 import httpx
-from fastapi import FastAPI, Request, Response, BackgroundTasks, HTTPException
+from fastapi import FastAPI, Request, Response, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -52,6 +52,28 @@ LEARNING_BUFFER = []
 RECENT_LOGS = [] # Store last 50 requests for dashboard monitoring
 buffer_lock = asyncio.Lock()
 logs_lock = asyncio.Lock()
+
+# WebSocket Manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                # Handle stale connections
+                continue
+
+manager = ConnectionManager()
 
 @app.on_event("startup")
 async def startup():
@@ -131,20 +153,38 @@ async def get_recent_logs():
     async with logs_lock:
         return RECENT_LOGS
 
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        # Send initial logs on connection
+        async with logs_lock:
+            await websocket.send_json({"type": "initial", "data": RECENT_LOGS})
+        
+        while True:
+            # Keep connection alive
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
 # --- Core Logic ---
 
 async def add_to_logs(method: str, path: str, status: int, latency: int, type: str):
     async with logs_lock:
-        RECENT_LOGS.insert(0, {
+        log_entry = {
             "time": datetime.datetime.now().strftime("%H:%M:%S"),
             "method": method,
             "path": path,
             "status": status,
             "latency": round(latency),
             "type": type
-        })
+        }
+        RECENT_LOGS.insert(0, log_entry)
         if len(RECENT_LOGS) > 50:
             RECENT_LOGS.pop()
+    
+    # Broadcast to all dashboard clients
+    await manager.broadcast({"type": "update", "data": log_entry})
 
 async def get_or_create_endpoint(session: AsyncSession, method: str, path_pattern: str):
     result = await session.execute(

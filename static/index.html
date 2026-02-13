@@ -584,14 +584,26 @@
             await loadEndpoints();
         }
 
-        async function syncLogs() {
-            try {
-                const res = await fetch('/admin/logs');
-                const logs = await res.json();
 
-                // Clear and rebuild log table
-                logBody.innerHTML = "";
-                logs.forEach(log => {
+        // WebSocket Integration
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            const socket = new WebSocket(wsUrl);
+
+            socket.onmessage = function (event) {
+                const message = JSON.parse(event.data);
+
+                if (message.type === 'initial') {
+                    // Load all existing logs
+                    renderLogs(message.data);
+                    // Update chart with existing data (last 20)
+                    message.data.slice().reverse().forEach(log => {
+                        updateChart(log.latency, log.type);
+                    });
+                } else if (message.type === 'update') {
+                    // Prepend new log to table
+                    const log = message.data;
                     const row = document.createElement("tr");
                     const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
                     const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
@@ -603,22 +615,54 @@
                         <td class="${statusClass}">${log.status}</td>
                         <td>${log.latency} ms</td>
                     `;
-                    logBody.appendChild(row);
-                });
 
-                // Update chart with the latest log if it's new
-                if (logs.length > 0) {
-                    const latest = logs[0];
-                    // Simple deduplication for chart (don't add if time/path is same as last)
-                    if (window.lastLogTime !== latest.time) {
-                        updateChart(latest.latency, latest.type);
-                        window.lastLogTime = latest.time;
+                    if (logBody.firstChild) {
+                        logBody.insertBefore(row, logBody.firstChild);
+                    } else {
+                        logBody.appendChild(row);
                     }
+
+                    // Keep only 50 logs in UI
+                    if (logBody.children.length > 50) {
+                        logBody.removeChild(logBody.lastChild);
+                    }
+
+                    // Update chart
+                    updateChart(log.latency, log.type);
                 }
-            } catch (e) { console.error("Log sync failed", e); }
+            };
+
+            socket.onclose = function () {
+                console.log("WebSocket Disconnected. Retrying in 3s...");
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            socket.onerror = function (err) {
+                console.error("WebSocket Error:", err);
+                socket.close();
+            };
         }
 
-        setInterval(syncLogs, 1500);
+        function renderLogs(logs) {
+            logBody.innerHTML = "";
+            logs.forEach(log => {
+                const row = document.createElement("tr");
+                const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
+                const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
+
+                row.innerHTML = `
+                    <td>${log.time}</td>
+                    <td><span class="badge ${badgeClass}">${log.type}</span></td>
+                    <td>${log.method} ${log.path}</td>
+                    <td class="${statusClass}">${log.status}</td>
+                    <td>${log.latency} ms</td>
+                `;
+                logBody.appendChild(row);
+            });
+        }
+
+        // Initialize WebSocket
+        connectWebSocket();
 
         async function req(id, headers) {
             const ep = window.endpointData[id];
