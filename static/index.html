@@ -4,328 +4,460 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Evolutionary Mock Suite</title>
+    <title>Evolutionary Mock Suite | Console</title>
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
     <style>
+        :root {
+            --bg: #050505;
+            --panel: #0d0d0f;
+            --accent: #a48eff;
+            --accent-glow: rgba(164, 142, 255, 0.3);
+            --text: #ffffff;
+            --text-dim: #888891;
+            --glass: rgba(20, 20, 25, 0.7);
+        }
+
         body {
-            font-family: 'Segoe UI', sans-serif;
-            background: #121212;
-            color: #e0e0e0;
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
             margin: 0;
-            padding: 20px;
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        .bg-glow {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(circle at 20% 30%, rgba(164, 142, 255, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(0, 212, 255, 0.05) 0%, transparent 50%);
+            z-index: -1;
+        }
+
+        .nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 80px;
+            background: var(--glass);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            background: linear-gradient(90deg, #fff, var(--accent));
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-decoration: none;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 30px;
+        }
+
+        .nav-link {
+            text-decoration: none;
+            color: var(--text-dim);
+            font-size: 14px;
+            font-weight: 500;
+            transition: 0.3s;
+        }
+
+        .nav-link:hover {
+            color: var(--accent);
+        }
+
+        .nav-link.active {
+            color: #fff;
+        }
+
+        /* Dashboard Layout */
+        .dashboard-container {
+            padding: 40px;
+            max-width: 1600px;
+            margin: 0 auto;
         }
 
         .grid {
             display: grid;
-            grid-template-columns: 350px 1fr;
-            gap: 20px;
-            max-width: 1400px;
-            margin: 0 auto;
+            grid-template-columns: 360px 1fr;
+            gap: 30px;
         }
 
         .panel {
-            background: #1e1e1e;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-            border: 1px solid #333;
+            background: var(--panel);
+            padding: 24px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
         }
 
         h1 {
-            margin: 0 0 20px 0;
-            color: #00d4ff;
-            font-size: 24px;
+            font-size: 22px;
+            font-weight: 800;
+            color: #fff;
+            margin: 0 0 24px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         h2 {
-            font-size: 18px;
-            color: #aaa;
-            margin-bottom: 15px;
-            border-bottom: 1px solid #333;
-            padding-bottom: 5px;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         /* Controls */
         .control-group {
-            margin-bottom: 25px;
+            margin-bottom: 30px;
         }
 
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: bold;
+        .val-large {
+            font-size: 36px;
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .val-sub {
+            font-size: 12px;
+            color: var(--text-dim);
         }
 
         input[type=range] {
             width: 100%;
-            accent-color: #ff4757;
+            height: 6px;
+            background: #222;
+            border-radius: 5px;
+            outline: none;
+            accent-color: var(--accent);
+            margin: 15px 0;
         }
 
         .toggle-switch {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: #2d2d2d;
-            padding: 10px;
-            border-radius: 8px;
-            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .toggle-switch span {
+            font-size: 14px;
+            font-weight: 600;
         }
 
         .btn {
-            background: #00d4ff;
-            color: #121212;
-            border: none;
-            padding: 10px 15px;
-            width: 100%;
-            border-radius: 6px;
-            font-weight: bold;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 13px;
             cursor: pointer;
-            transition: 0.2s;
+            transition: 0.3s;
+            border: none;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .btn:hover {
-            background: #40e0ff;
+        .btn-primary {
+            background: var(--accent);
+            color: #000;
         }
 
-        .btn.test {
+        .btn-primary:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-danger {
             background: #ff4757;
-            color: white;
-            margin-top: 10px;
-        }
-
-        /* Stats */
-        .val-large {
-            font-size: 32px;
-            font-weight: bold;
             color: #fff;
         }
 
-        .val-sub {
-            font-size: 14px;
-            color: #888;
+        .btn-danger:hover {
+            opacity: 0.9;
         }
 
-        /* Logs */
+        /* Stats \u0026 Visualization */
         .log-table {
             width: 100%;
             border-collapse: collapse;
-            font-family: monospace;
-            font-size: 13px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
         }
 
         .log-table th {
             text-align: left;
-            color: #888;
-            padding: 10px;
-            border-bottom: 1px solid #333;
+            color: var(--text-dim);
+            padding: 12px 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 11px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .log-table td {
-            padding: 8px 10px;
-            border-bottom: 1px solid #252525;
-            color: #ccc;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+            color: var(--text-dim);
         }
 
         .status-ok {
-            color: #0f0;
+            color: #5cb85c;
         }
 
         .status-err {
-            color: #f00;
+            color: #ff4757;
         }
 
         .badge {
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
         }
 
         .badge-ai {
-            background: #2b1d52;
-            color: #a48eff;
-            border: 1px solid #5643a0;
+            background: rgba(164, 142, 255, 0.15);
+            color: var(--accent);
+            border: 1px solid rgba(164, 142, 255, 0.3);
         }
 
         .badge-real {
-            background: #163016;
+            background: rgba(92, 184, 92, 0.1);
             color: #5cb85c;
-            border: 1px solid #2d5a2d;
-        }
-
-        .badge-proxy {
-            background: #3d3d3d;
-            color: #aaa;
+            border: 1px solid rgba(92, 184, 92, 0.2);
         }
 
         #logContainer {
-            height: 350px;
+            height: 400px;
             overflow-y: auto;
-            margin-top: 20px;
+            margin-top: 5px;
         }
 
-        #chartContainer {
-            height: 250px;
-            width: 100%;
+        /* Schema Editor */
+        .schema-tab-container {
+            display: flex;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 5px;
+            border-radius: 10px;
+            margin: 10px 0;
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .schema-tab {
-            background: transparent;
-            border: none;
-            color: #999;
-            padding: 12px 18px;
+            flex: 1;
+            padding: 10px;
+            text-align: center;
             font-size: 11px;
-            text-transform: uppercase;
             font-weight: 700;
+            text-transform: uppercase;
             cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: all 0.2s;
-            letter-spacing: 0.5px;
-        }
-
-        .schema-tab:hover {
-            color: #aaa;
+            border-radius: 8px;
+            color: var(--text-dim);
+            transition: 0.3s;
         }
 
         .active-tab {
-            color: #a48eff !important;
-            border-bottom-color: #a48eff;
-            background: rgba(164, 142, 255, 0.05);
+            background: rgba(164, 142, 255, 0.1);
+            color: var(--accent);
+        }
+
+        textarea {
+            width: 100%;
+            background: #000;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            color: var(--accent);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            resize: none;
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #222;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #333;
         }
     </style>
 </head>
 
 <body>
+    <div class="bg-glow"></div>
 
-    <div class="grid">
-        <!-- Controls Panel -->
-        <div class="panel">
-            <h1>🔧 Control Deck</h1>
-
-            <div class="control-group">
-                <h2>Chaos Engine</h2>
-                <div class="val-large"><span id="chaosVal">0</span>%</div>
-                <input type="range" min="0" max="100" value="0" id="chaosRange">
-                <div class="val-sub">Artificial Failure Probability</div>
-            </div>
-
-            <div class="control-group">
-                <h2>Platform Configuration</h2>
-
-                <div class="toggle-switch">
-                    <span>🧠 Global Learning</span>
-                    <input type="checkbox" id="learningToggle">
-                </div>
-                <div class="val-sub" style="margin-top:-5px; margin-bottom: 20px;">Update AI model from Proxy traffic
-                </div>
-
-                <div
-                    style="margin-bottom: 5px; color: #888; font-size: 11px; text-transform: uppercase; font-weight: bold;">
-                    Global Operation Mode</div>
-                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                    <button id="modeProxy" class="btn" style="flex: 1; padding: 6px;" onclick="setMode('proxy')">Ghost
-                        (Proxy)</button>
-                    <button id="modeMock" class="btn" style="flex: 1; padding: 6px;" onclick="setMode('mock')">Rocket
-                        (Mock)</button>
-                </div>
-                <div class="val-sub">Determines behavior for external apps without headers</div>
-            </div>
-
-            <!-- Onboarding Walkthrough -->
-            <div class="control-group" id="walkthroughPanel" style="background: #1e1e1e; border: 1px dashed #444;">
-                <h2 style="color: #a48eff;">🚀 Getting Started</h2>
-                <div style="font-size: 12px; line-height: 1.6; color: #aaa;">
-                    <p><b>1. Ghost Mode (Proxy)</b>: Keep this on while using your real app. The AI 🧠 is watching and
-                        learning patterns.</p>
-                    <p><b>2. Smart Normalization</b>: Notice how <code style="color:#eee;">/users/1</code> becomes <code
-                            style="color:#eee;">/users/{id}</code> in the dropdown below.</p>
-                    <p><b>3. Rocket Mode (Mock)</b>: Turn off your real backend. The Platform will now take over using
-                        its learned behavior!</p>
-                    <p><b>4. Chaos Injection</b>: Slide the bar left to simulate network instability or 500 errors.</p>
-                </div>
-                <button class="btn" onclick="document.getElementById('walkthroughPanel').style.display='none'"
-                    style="background: transparent; border: 1px solid #444; color: #666; font-size: 10px; margin-top: 10px;">Dismiss
-                    Guide</button>
-            </div>
-
-            <div class="control-group">
-                <h2>Test Console</h2>
-                <select id="endpointSelect"
-                    style="width: 100%; background: #2d2d2d; color: white; border: 1px solid #444; padding: 8px; border-radius: 6px; margin-bottom: 10px;">
-                    <!-- Dynamically loaded from /admin/endpoints -->
-                </select>
-                <button class="btn test" onclick="sendTestRequest()">Rocket Fire (Mock)</button>
-                <div style="margin-top: 5px;"></div>
-                <button class="btn" onclick="sendProxyRequest()">Ghost Fire (Proxy)</button>
-                <div style="margin-top: 15px;">
-                    <button class="btn" style="background: #333; color: #aaa;"
-                        onclick="window.open('/admin/explorer', '_blank')">Visual Endpoint Explorer</button>
-                    <div style="margin-top: 5px;"></div>
-                    <button class="btn" style="background: #2b1d52; color: #a48eff; border: 1px solid #5643a0;"
-                        onclick="window.open('/admin/docs', '_blank')">Interactive API Docs (Swagger)</button>
-                    <div style="margin-top: 10px; font-size: 10px; text-align: center;">
-                        <a href="/admin/export-openapi" target="_blank" style="color: #444;">Raw JSON Spec</a> |
-                        <a href="/admin/endpoints" target="_blank" style="color: #444;">Raw Endpoints</a>
-                    </div>
-                </div>
-            </div>
+    <nav class="nav">
+        <a href="/" class="logo">EVOLUTIONARY MOCK</a>
+        <div class="nav-links">
+            <a href="/" class="nav-link">Home</a>
+            <a href="/admin/dashboard" class="nav-link active">Console</a>
+            <a href="/admin/explorer" class="nav-link">Explorer</a>
+            <a href="/admin/docs" class="nav-link">Docs</a>
         </div>
+    </nav>
 
-        <!-- Visualization & Logs -->
-        <div class="panel" style="padding: 0; overflow: hidden; display: flex; flex-direction: column;">
+    <div class="dashboard-container">
+        <div class="grid">
+            <!-- Left Panel: Controls -->
+            <div class="panel">
+                <h1>🔧 Control Deck</h1>
 
-            <div style="padding: 20px; border-bottom: 1px solid #333; background: #252525;">
-                <h2 style="margin:0; border:none;">📊 Latency Monitor</h2>
-            </div>
-
-            <div style="padding: 20px;">
-                <canvas id="latencyChart" style="height: 200px; max-height: 200px; width: 100%;"></canvas>
-            </div>
-
-            <div
-                style="padding: 10px 20px; border-top: 1px solid #333; background: #252525; border-bottom: 1px solid #333;">
-                <h2 style="margin:0; border:none; font-size: 14px;">📡 Live Stream</h2>
-            </div>
-
-            <div id="logContainer">
-                <table class="log-table">
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            <th>Type</th>
-                            <th>Method</th>
-                            <th>Status</th>
-                            <th>Latency</th>
-                        </tr>
-                    </thead>
-                    <tbody id="logBody">
-                        <!-- Logs go here -->
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Schema Inspector Panel -->
-            <div
-                style="background: #1a1a1a; flex: 1; border-top: 1px solid #333; display: flex; flex-direction: column;">
-                <div
-                    style="background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; padding: 0 20px;">
-                    <div style="display: flex; gap: 0;">
-                        <button id="tabInbound" class="schema-tab active-tab"
-                            onclick="switchSchemaTab('inbound')">Inbound (Req)</button>
-                        <button id="tabOutbound" class="schema-tab" onclick="switchSchemaTab('outbound')">Outbound
-                            (Resp)</button>
-                    </div>
-                    <button class="btn" style="width: auto; padding: 4px 10px; font-size: 11px; margin: 10px 0;"
-                        onclick="saveSchema()">Override AI Brain</button>
+                <div class="control-group">
+                    <h2>Chaos Engine</h2>
+                    <div class="val-large"><span id="chaosVal">0</span>%</div>
+                    <input type="range" min="0" max="100" value="0" id="chaosRange">
+                    <div class="val-sub">Artificial Failure Probability</div>
                 </div>
-                <textarea id="schemaEditor"
-                    style="flex: 1; background: #121212; color: #a48eff; border: none; padding: 15px; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; resize: none; overflow-y: auto;"
-                    spellcheck="false">
-/* Select an endpoint to inspect its learned schema */
-                </textarea>
-                <div id="schemaMeta"
-                    style="padding: 5px 15px; background: #000; font-size: 10px; color: #555; border-top: 1px solid #222;">
-                    Showing learned structure for current selection
+
+                <div class="control-group">
+                    <h2>Platform Configuration</h2>
+                    <div class="toggle-switch">
+                        <span>🧠 Global Learning</span>
+                        <input type="checkbox" id="learningToggle">
+                    </div>
+                    <div class="val-sub" style="margin-top:-5px; margin-bottom: 20px;">Master API behavior from active
+                        Proxy traffic.</div>
+
+                    <div
+                        style="margin-bottom: 10px; color: #888; font-size: 11px; text-transform: uppercase; font-weight: bold;">
+                        Operation Mode</div>
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <button id="modeProxy" class="btn btn-secondary" onclick="setMode('proxy')">Ghost
+                            (Proxy)</button>
+                        <button id="modeMock" class="btn btn-secondary" onclick="setMode('mock')">Rocket (Mock)</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h2>Test Console</h2>
+                    <select id="endpointSelect"
+                        style="width: 100%; background: #000; color: white; border: 1px solid #222; padding: 12px; border-radius: 10px; margin-bottom: 15px; font-family: 'Outfit'; font-size: 14px;">
+                        <!-- Dynamically loaded -->
+                    </select>
+                    <button class="btn btn-danger" onclick="sendTestRequest()">Rocket Fire (Mock)</button>
+                    <div style="margin-top: 10px;"></div>
+                    <button class="btn btn-primary" onclick=" sendProxyRequest()">Ghost Fire (Proxy)</button>
+                </div>
+
+                <!-- Onboarding -->
+                <div id="walkthroughPanel"
+                    style="background: rgba(164, 142, 255, 0.05); padding: 20px; border-radius: 15px; border: 1px dashed rgba(164, 142, 255, 0.3);">
+                    <h2 style="color: var(--accent); border: none; margin: 0 0 10px 0;">🚀 Deployment Guide</h2>
+                    <div style="font-size: 11px; line-height: 1.6; color: var(--text-dim);">
+                        <p>1. <b>Ghost Mode</b> learns patterns from real traffic.</p>
+                        <p>2. <b>Rocket Mode</b> serves AI-generated mocks.</p>
+                        <p>3. Use <b>Chaos</b> to harden your app resilience.</p>
+                    </div>
+                    <button class="btn-secondary"
+                        onclick="document.getElementById('walkthroughPanel').style.display='none'"
+                        style="margin-top: 10px; width: 100%; border-radius: 8px; font-size: 10px; padding: 5px;">Dismiss
+                        Guide</button>
+                </div>
+            </div>
+
+            <!-- Right Panel: Vis \u0026 Logs -->
+            <div class="panel" style="padding: 0; display: flex; flex-direction: column; overflow: hidden;">
+                <div style="padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <h2 style="margin:0; border:none;">📊 Real-time Latency Monitor</h2>
+                    <div style="margin-top:20px;">
+                        <canvas id="latencyChart" style="height: 180px; width: 100%;"></canvas>
+                    </div>
+                </div>
+
+                <div style="padding: 24px; flex: 1; display: flex; flex-direction: column;">
+                    <h2 style="margin:0 0 15px 0; border:none;">📡 Live Stream</h2>
+                    <div id="logContainer">
+                        <table class="log-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Type</th>
+                                    <th>Request</th>
+                                    <th>Status</th>
+                                    <th>Latency</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Schema Inspector -->
+                <div style="background: rgba(0,0,0,0.3); border-top: 1px solid rgba(255,255,255,0.05); padding: 24px;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h2 style="margin:0; border:none;">🧠 AI Brain Inspector</h2>
+                        <button class="btn btn-primary" style="width: auto; padding: 6px 15px; font-size: 11px;"
+                            onclick="saveSchema()">Update Knowledge</button>
+                    </div>
+
+                    <div class="schema-tab-container">
+                        <div id="tabInbound" class="schema-tab active-tab" onclick="switchSchemaTab('inbound')">Inbound
+                            (Req)</div>
+                        <div id="tabOutbound" class="schema-tab" onclick="switchSchemaTab('outbound')">Outbound (Resp)
+                        </div>
+                    </div>
+
+                    <textarea id="schemaEditor" rows="8"></textarea>
+                    <div id="schemaMeta"
+                        style="font-size: 10px; color: var(--text-dim); margin-top: 10px; font-family: 'JetBrains Mono';">
+                        Select an endpoint to inspect learned behavior patterns.
+                    </div>
                 </div>
             </div>
         </div>
@@ -338,25 +470,34 @@
         const logBody = document.getElementById("logBody");
         const ctx = document.getElementById('latencyChart').getContext('2d');
 
-        // Chart.js Setup
+        // Font family for Chart.js
+        Chart.defaults.font.family = "'Outfit'";
+        Chart.defaults.color = "#888891";
+
         const chart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
                 datasets: [
                     {
-                        label: 'Mock Latency (AI)',
+                        label: 'Mock (AI)',
                         borderColor: '#a48eff',
                         backgroundColor: 'rgba(164, 142, 255, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        pointRadius: 0,
                         data: [],
-                        tension: 0.3
+                        tension: 0.4
                     },
                     {
-                        label: 'Real Latency (Proxy)',
+                        label: 'Real (Proxy)',
                         borderColor: '#5cb85c',
                         backgroundColor: 'rgba(92, 184, 92, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        pointRadius: 0,
                         data: [],
-                        tension: 0.3
+                        tension: 0.4
                     }
                 ]
             },
@@ -365,41 +506,43 @@
                 maintainAspectRatio: false,
                 scales: {
                     x: { display: false },
-                    y: { beginAtZero: true, grid: { color: '#333' } }
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { font: { size: 10 } }
+                    }
                 },
                 plugins: {
-                    legend: { labels: { color: '#ccc' } }
+                    legend: {
+                        position: 'top',
+                        align: 'end',
+                        labels: { boxWidth: 10, usePointStyle: true, font: { size: 11 } }
+                    }
                 }
             }
         });
 
         function updateChart(latency, type) {
             const now = new Date().toLocaleTimeString();
-
-            // Remove old data if > 20 points
-            if (chart.data.labels.length > 20) {
+            if (chart.data.labels.length > 30) {
                 chart.data.labels.shift();
                 chart.data.datasets[0].data.shift();
                 chart.data.datasets[1].data.shift();
             }
-
             chart.data.labels.push(now);
-
             if (type === "Mock") {
                 chart.data.datasets[0].data.push(latency);
-                chart.data.datasets[1].data.push(null); // Gap for other line
+                chart.data.datasets[1].data.push(null);
             } else {
                 chart.data.datasets[0].data.push(null);
                 chart.data.datasets[1].data.push(latency);
             }
-
             chart.update();
         }
 
-        // Init
+        // Init config \u0026 UI
         syncConfig();
 
-        // Event Listeners
         slider.onchange = async function () {
             output.innerHTML = this.value;
             await fetch('/admin/chaos', {
@@ -408,7 +551,6 @@
                 body: JSON.stringify({ level: this.value })
             });
         }
-
         slider.oninput = function () { output.innerHTML = this.value; }
 
         learningToggle.onchange = async function () {
@@ -431,24 +573,12 @@
         function updateModeUI(mode) {
             const proxyBtn = document.getElementById("modeProxy");
             const mockBtn = document.getElementById("modeMock");
-
-            if (mode === 'proxy') {
-                proxyBtn.classList.add('active-mode');
-                proxyBtn.style.background = '#5cb85c'; // Green for Proxy
-                mockBtn.classList.remove('active-mode');
-                mockBtn.style.background = '#333';
-            } else {
-                mockBtn.classList.add('active-mode');
-                mockBtn.style.background = '#a48eff'; // Purple for Mock
-                proxyBtn.classList.remove('active-mode');
-                proxyBtn.style.background = '#333';
-            }
+            proxyBtn.classList.toggle('active-tab', mode === 'proxy');
+            mockBtn.classList.toggle('active-tab', mode === 'mock');
         }
 
         let currentEndpointStats = null;
         let currentSchemaTab = 'outbound';
-
-        // Important: Link the select change event
         document.getElementById("endpointSelect").onchange = async function () {
             await loadEndpointDetails(this.value);
         };
@@ -457,21 +587,16 @@
             currentSchemaTab = tab;
             document.getElementById('tabInbound').classList.toggle('active-tab', tab === 'inbound');
             document.getElementById('tabOutbound').classList.toggle('active-tab', tab === 'outbound');
-
             if (!currentEndpointStats) return;
-
             const editor = document.getElementById("schemaEditor");
             const meta = document.getElementById("schemaMeta");
-
             if (tab === 'inbound') {
                 editor.value = JSON.stringify(currentEndpointStats.behavior.request_schema || {}, null, 4);
                 meta.innerText = "Showing INBOUND (Request) structure observed by AI";
-                meta.style.color = "#a48eff";
                 editor.style.color = "#a48eff";
             } else {
                 editor.value = JSON.stringify(currentEndpointStats.behavior.schema_preview || {}, null, 4);
                 meta.innerText = "Showing OUTBOUND (Response) structure for generating Mocks";
-                meta.style.color = "#5cb85c";
                 editor.style.color = "#5cb85c";
             }
         }
@@ -482,165 +607,101 @@
                 const statsRes = await fetch(`/admin/endpoints/${id}/stats`);
                 const stats = await statsRes.json();
                 currentEndpointStats = stats;
-
-                // Auto-switch to Inbound if it's a POST/PUT
                 const epData = window.endpointData[id];
                 const method = epData ? epData.method : "GET";
-
-                if (['POST', 'PUT', 'PATCH'].includes(method)) {
-                    switchSchemaTab('inbound');
-                } else {
-                    switchSchemaTab('outbound');
-                }
-
-                // Also sync chaos for this specific endpoint
-                slider.value = stats.chaos.level;
-                output.innerHTML = stats.chaos.level;
+                switchSchemaTab(['POST', 'PUT', 'PATCH'].includes(method) ? 'inbound' : 'outbound');
             } catch (e) {
-                console.error("Failed to load details", e);
-                document.getElementById("schemaEditor").value = "Failed to load AI knowledge for this endpoint.";
+                document.getElementById("schemaEditor").value = "Failed to load patterns.";
             }
         }
 
         async function saveSchema() {
             const id = document.getElementById("endpointSelect").value;
             if (!id) return alert("Select an endpoint first");
-
             try {
                 const newSchema = JSON.parse(document.getElementById("schemaEditor").value);
-
                 await fetch(`/admin/endpoints/${id}/schema`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        schema: newSchema,
-                        type: currentSchemaTab // 'inbound' or 'outbound'
-                    })
+                    body: JSON.stringify({ schema: newSchema, type: currentSchemaTab })
                 });
-
-                // Refresh local cache
-                if (currentSchemaTab === 'inbound') {
-                    currentEndpointStats.behavior.request_schema = newSchema;
-                } else {
-                    currentEndpointStats.behavior.schema_preview = newSchema;
-                }
-
-                alert(`AI Brain Updated: ${currentSchemaTab} schema saved.`);
-            } catch (e) { alert("Invalid JSON or Save Failed"); }
+                if (currentSchemaTab === 'inbound') currentEndpointStats.behavior.request_schema = newSchema;
+                else currentEndpointStats.behavior.schema_preview = newSchema;
+                alert(`AI Knowledge Updated.`);
+            } catch (e) { alert("Invalid JSON format."); }
         }
 
-
-        window.endpointData = {}; // Store {id: {path, method}}
+        window.endpointData = {};
         async function loadEndpoints() {
             try {
                 const res = await fetch('/admin/endpoints');
                 const endpoints = await res.json();
                 const select = document.getElementById("endpointSelect");
                 const currentVal = select.value;
-
                 select.innerHTML = "";
                 endpoints.forEach(ep => {
                     window.endpointData[ep.id] = { path: ep.path_pattern, method: ep.method };
                     const opt = document.createElement("option");
                     opt.value = ep.id;
-                    opt.textContent = `${ep.path_pattern} (${ep.method})`;
+                    opt.textContent = `${ep.method} ${ep.path_pattern}`;
                     if (ep.id == currentVal) opt.selected = true;
                     select.appendChild(opt);
                 });
-
-                // Add "Help" option if empty
-                if (endpoints.length === 0) {
-                    select.innerHTML = '<option value="">No endpoints learned yet...</option>';
-                } else if (!currentVal && endpoints.length > 0) {
-                    // Load details for first endpoint if none selected
-                    await loadEndpointDetails(endpoints[0].id);
-                }
-            } catch (e) { console.error("Failed to load endpoints", e); }
+                if (endpoints.length > 0 && !currentVal) await loadEndpointDetails(endpoints[0].id);
+            } catch (e) { }
         }
 
         async function syncConfig() {
             try {
                 const res = await fetch('/admin/config');
                 const data = await res.json();
-                slider.value = data.chaos_level;
-                output.innerHTML = data.chaos_level;
+                slider.value = data.chaos_level || 0;
+                output.innerHTML = data.chaos_level || 0;
                 learningToggle.checked = data.learning_mode;
                 updateModeUI(data.platform_mode);
                 await loadEndpoints();
-            } catch (e) { console.error("Sync failed", e); }
+            } catch (e) { }
         }
 
         async function sendTestRequest() {
-            const id = document.getElementById("endpointSelect").value;
-            if (!id) return;
+            const id = document.getElementById("endpointSelect").value; if (!id) return;
             await req(id, { 'X-Mock-Enabled': 'true' });
         }
 
         async function sendProxyRequest() {
-            const id = document.getElementById("endpointSelect").value;
-            if (!id) return;
+            const id = document.getElementById("endpointSelect").value; if (!id) return;
             await req(id, { 'X-Mock-Enabled': 'false' });
-            // Refresh in case we learned something new
             await loadEndpoints();
         }
 
-
-        // WebSocket Integration
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws`;
             const socket = new WebSocket(wsUrl);
-
             socket.onmessage = function (event) {
                 const message = JSON.parse(event.data);
-
                 if (message.type === 'initial') {
-                    // Load all existing logs
                     renderLogs(message.data);
-                    // Update chart with existing data (last 20)
-                    message.data.slice().reverse().forEach(log => {
-                        updateChart(log.latency, log.type);
-                    });
+                    message.data.slice().reverse().forEach(log => updateChart(log.latency, log.type));
                 } else if (message.type === 'update') {
-                    // Prepend new log to table
                     const log = message.data;
                     const row = document.createElement("tr");
                     const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
                     const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
-
                     row.innerHTML = `
                         <td>${log.time}</td>
-                        <td><span class="badge ${badgeClass}">${log.type}</span></td>
+                        <td><span class=\"badge ${badgeClass}\">${log.type}</span></td>
                         <td>${log.method} ${log.path}</td>
-                        <td class="${statusClass}">${log.status}</td>
+                        <td class=\"${statusClass}\">${log.status}</td>
                         <td>${log.latency} ms</td>
                     `;
-
-                    if (logBody.firstChild) {
-                        logBody.insertBefore(row, logBody.firstChild);
-                    } else {
-                        logBody.appendChild(row);
-                    }
-
-                    // Keep only 50 logs in UI
-                    if (logBody.children.length > 50) {
-                        logBody.removeChild(logBody.lastChild);
-                    }
-
-                    // Update chart
+                    if (logBody.firstChild) logBody.insertBefore(row, logBody.firstChild);
+                    else logBody.appendChild(row);
+                    if (logBody.children.length > 50) logBody.removeChild(logBody.lastChild);
                     updateChart(log.latency, log.type);
                 }
             };
-
-            socket.onclose = function () {
-                console.log("WebSocket Disconnected. Retrying in 3s...");
-                setTimeout(connectWebSocket, 3000);
-            };
-
-            socket.onerror = function (err) {
-                console.error("WebSocket Error:", err);
-                socket.close();
-            };
+            socket.onclose = () => setTimeout(connectWebSocket, 3000);
         }
 
         function renderLogs(logs) {
@@ -649,7 +710,6 @@
                 const row = document.createElement("tr");
                 const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
                 const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
-
                 row.innerHTML = `
                     <td>${log.time}</td>
                     <td><span class="badge ${badgeClass}">${log.type}</span></td>
@@ -660,41 +720,20 @@
                 logBody.appendChild(row);
             });
         }
-
-        // Initialize WebSocket
         connectWebSocket();
 
         async function req(id, headers) {
-            const ep = window.endpointData[id];
-            if (!ep) return;
-
-            const method = ep.method;
-            const url = ep.path;
-            const start = Date.now();
+            const ep = window.endpointData[id]; if (!ep) return;
             try {
-                const fetchOpts = {
-                    method: method,
-                    headers: { 'Content-Type': 'application/json', ...headers }
-                };
-
-                // If it's a data-carrying method, try to use the schema from the editor
-                if (["POST", "PUT", "PATCH"].includes(method)) {
-                    const editorVal = document.getElementById("schemaEditor").value;
-                    try {
-                        fetchOpts.body = editorVal ? editorVal : JSON.stringify({ sample: "data" });
-                    } catch (e) {
-                        fetchOpts.body = JSON.stringify({ sample: "data" });
-                    }
+                const fetchOpts = { method: ep.method, headers: { 'Content-Type': 'application/json', ...headers } };
+                if (["POST", "PUT", "PATCH"].includes(ep.method)) {
+                    const val = document.getElementById("schemaEditor").value;
+                    fetchOpts.body = val ? val : JSON.stringify({ sample: "data" });
                 }
-
-                await fetch(url, fetchOpts);
-            } catch (e) {
-                console.error("Test request failed", e);
-            }
+                await fetch(ep.path, fetchOpts);
+            } catch (e) { }
         }
-
     </script>
-
 </body>
 
 </html>

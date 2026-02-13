@@ -4,6 +4,7 @@ import time
 import random
 import asyncio
 import datetime
+import logging
 from typing import List, Dict, Any, Optional
 
 import httpx
@@ -17,6 +18,10 @@ from sqlalchemy import select, update, text
 from models import Base, Endpoint, EndpointBehavior, ChaosConfig
 from utils.normalization import normalize_path
 from utils.schema_learner import learn_schema, generate_mock_response
+
+# Logging Setup
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logger = logging.getLogger("mock_platform")
 
 # Config
 TARGET_URL = os.environ.get("TARGET_URL", "http://httpbin.org")
@@ -88,7 +93,7 @@ async def startup():
         try:
             await conn.execute(text("ALTER TABLE endpoint_behavior ADD COLUMN request_schema JSON"))
             await conn.commit()
-            print("✅ Database Migrated: Added 'request_schema' column.")
+            logger.info("✅ Database Migrated: Added 'request_schema' column.")
         except Exception:
             # Column likely already exists
             pass
@@ -96,6 +101,13 @@ async def startup():
 # --- Dashboard & Admin APIs ---
 
 @app.get("/")
+async def get_landing():
+    landing_path = os.path.join(BASE_DIR, "..", "static", "landing.html")
+    if os.path.exists(landing_path):
+        return FileResponse(landing_path)
+    return JSONResponse({"error": "Landing landing.html not found"}, status_code=404)
+
+@app.get("/admin/dashboard")
 async def get_dashboard():
     dashboard_path = os.path.join(BASE_DIR, "..", "static", "index.html")
     if os.path.exists(dashboard_path):
@@ -215,48 +227,55 @@ async def process_learning_buffer():
 
     async with AsyncSessionLocal() as session:
         for item in batch:
-            method = item['method']
-            path_pattern = item['path_pattern']
-            status = item['status']
-            latency = item['latency']
-            resp_body = item['response_body']
-            req_body = item['request_body']
-            
-            endpoint = await get_or_create_endpoint(session, method, path_pattern)
-            behavior_res = await session.execute(
-                select(EndpointBehavior).where(EndpointBehavior.endpoint_id == endpoint.id)
-            )
-            behavior = behavior_res.scalars().first()
-            
-            # Update EMA for Latency
-            alpha = 0.1
-            behavior.latency_mean = (behavior.latency_mean * (1 - alpha)) + (latency * alpha)
-            
-            # Update status code distributions
-            dist = behavior.status_code_distribution or {}
-            status_str = str(status)
-            for k in dist.keys():
-                dist[k] *= (1 - alpha)
-            dist[status_str] = dist.get(status_str, 0) + alpha
-            
-            # Normalize distribution
-            total = sum(dist.values())
-            behavior.status_code_distribution = {k: v/total for k, v in dist.items()}
-            
-            # Update Error Rate (e.g. 5xx status codes)
-            is_error = 1.0 if status >= 500 else 0.0
-            behavior.error_rate = (behavior.error_rate * (1 - alpha)) + (is_error * alpha)
-            
-            # Learn Schema
-            if status < 300 and resp_body:
-                behavior.response_schema = learn_schema(behavior.response_schema, resp_body)
-            
-            if req_body:
-                behavior.request_schema = learn_schema(behavior.request_schema, req_body)
-            
-            session.add(behavior)
+            try:
+                method = item['method']
+                path_pattern = item['path_pattern']
+                status = item['status']
+                latency = item['latency']
+                resp_body = item['response_body']
+                req_body = item['request_body']
+                
+                endpoint = await get_or_create_endpoint(session, method, path_pattern)
+                behavior_res = await session.execute(
+                    select(EndpointBehavior).where(EndpointBehavior.endpoint_id == endpoint.id)
+                )
+                behavior = behavior_res.scalars().first()
+                
+                # Update EMA for Latency
+                alpha = 0.1
+                behavior.latency_mean = (behavior.latency_mean * (1 - alpha)) + (latency * alpha)
+                
+                # Update status code distributions
+                dist = behavior.status_code_distribution or {}
+                status_str = str(status)
+                for k in dist.keys():
+                    dist[k] *= (1 - alpha)
+                dist[status_str] = dist.get(status_str, 0) + alpha
+                
+                # Normalize distribution
+                total = sum(dist.values())
+                behavior.status_code_distribution = {k: v/total for k, v in dist.items()}
+                
+                # Update Error Rate (e.g. 5xx status codes)
+                is_error = 1.0 if status >= 500 else 0.0
+                behavior.error_rate = (behavior.error_rate * (1 - alpha)) + (is_error * alpha)
+                
+                # Learn Schema (Only if it's JSON)
+                if status < 300 and resp_body and isinstance(resp_body, (dict, list)):
+                    behavior.response_schema = learn_schema(behavior.response_schema, resp_body)
+                
+                if req_body and isinstance(req_body, (dict, list)):
+                    behavior.request_schema = learn_schema(behavior.request_schema, req_body)
+                
+                session.add(behavior)
+            except Exception as e:
+                logger.error(f"❌ Error learning from request: {str(e)}")
+                continue
         
-        await session.commit()
+        try:
+            await session.commit()
+        except Exception as e:
+            logger.error(f"❌ Error committing learning batch: {str(e)}")
 
 # --- Admin API ---
 
@@ -427,8 +446,8 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
     req_body_bytes = await request.body()
     try:
         req_body_json = await request.json() if req_body_bytes else None
-    except:
-        req_body_json = None
+    except Exception:
+        req_body_json = None # Non-JSON body
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -444,10 +463,11 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
             
         latency_ms = (time.time() - start_time) * 1000
         
+        # Try to parse response JSON for learning, but don't fail if it's not JSON
         try:
             resp_body_json = proxy_resp.json()
-        except:
-            resp_body_json = None
+        except Exception:
+            resp_body_json = None # HTML, Text, etc.
             
         if PLATFORM_STATE["learning_enabled"]:
             async with buffer_lock:
@@ -468,49 +488,74 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
         )
     except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as e:
         # AUTOMATIC FAILOVER: Backend is down, serve a mock instead!
-        print(f"⚠️ PROXY FAILED to {TARGET_URL}. Falling back to AI Mock. Error: {str(e)}")
+        logger.warning(f"⚠️ PROXY FAILOVER: Backend {TARGET_URL} unreachable. Error: {str(e)}")
         return await generate_endpoint_mock(behavior, chaos, normalized, request, is_failover=True)
     except Exception as e:
+        logger.error(f"💥 UNEXPECTED PROXY ERROR: {str(e)}")
         raise HTTPException(status_code=502, detail=f"Proxy Error: {str(e)}")
 
 async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failover=False):
-    # Apply Chaos
-    effective_chaos = chaos.chaos_level if chaos.is_active else 0
-    header_chaos = request.headers.get("X-Chaos-Level")
-    if header_chaos:
-        effective_chaos = int(header_chaos)
+    try:
+        # Apply Chaos
+        effective_chaos = chaos.chaos_level if chaos and chaos.is_active else 0
+        header_chaos = request.headers.get("X-Chaos-Level")
+        if header_chaos:
+            try:
+                effective_chaos = int(header_chaos)
+            except: pass
 
-    # Decide Error vs Success
-    error_prob = behavior.error_rate + (effective_chaos / 100.0)
-    if random.random() < min(error_prob, 0.9):
+        # Decide Error vs Success
+        # error_rate is from learned behavior, chaos is artificial
+        error_prob = behavior.error_rate if behavior else 0
+        error_prob += (effective_chaos / 100.0)
+        
+        if random.random() < min(error_prob, 0.9):
+            log_status = 500
+            await add_to_logs(request.method, normalized, log_status, 0, "Mock")
+            return JSONResponse(
+                content={"error": "Status Injected (AI/Chaos)", "endpoint": normalized, "failover": is_failover},
+                status_code=log_status
+            )
+
+        # Simulate Latency
+        latency = (behavior.latency_mean if behavior else 50) + (effective_chaos * 10)
+        await asyncio.sleep(latency / 1000.0)
+        
+        # Choose Status Code
+        status_code = 200
+        if behavior and behavior.status_code_distribution:
+            codes = list(behavior.status_code_distribution.keys())
+            probs = list(behavior.status_code_distribution.values())
+            try:
+                status_code = int(random.choices(codes, weights=probs)[0])
+            except:
+                status_code = 200
+        
+        # Generate Body
+        try:
+            req_body = await request.json()
+        except:
+            req_body = {}
+            
+        schema = behavior.response_schema if behavior else None
+        mock_body = generate_mock_response(schema, req_body)
+        
+        if not mock_body:
+            mock_body = {"message": "AI fallback (No patterns learned yet)", "endpoint": normalized}
+            
+        if isinstance(mock_body, dict) and is_failover:
+            mock_body["_meta"] = "Generated via AI Fallback (Backend Unreachable)"
+        
+        # Log it
+        await add_to_logs(request.method, normalized, status_code, latency, "Mock")
+            
+        return JSONResponse(content=mock_body, status_code=status_code)
+    except Exception as e:
+        logger.error(f"❌ MOCK GENERATION FAILED: {str(e)}")
         return JSONResponse(
-            content={"error": "Chaos Injected", "endpoint": normalized, "failover": is_failover},
+            content={"error": "Mock Generation Failed", "detail": str(e)},
             status_code=500
         )
-
-    # Simulate Latency
-    latency = behavior.latency_mean + (effective_chaos * 10)
-    await asyncio.sleep(latency / 1000.0)
-    
-    # Choose Status Code
-    codes = list(behavior.status_code_distribution.keys())
-    probs = list(behavior.status_code_distribution.values())
-    status_code = int(random.choices(codes, weights=probs)[0]) if codes else 200
-    
-    # Generate Body
-    try:
-        req_body = await request.json()
-    except:
-        req_body = {}
-        
-    mock_body = generate_mock_response(behavior.response_schema, req_body)
-    if isinstance(mock_body, dict) and is_failover:
-        mock_body["_meta"] = "Generated via AI Fallback (Backend Unreachable)"
-    
-    # Log it
-    await add_to_logs(request.method, normalized, status_code, latency, "Mock")
-        
-    return JSONResponse(content=mock_body, status_code=status_code)
 
 
 if __name__ == "__main__":

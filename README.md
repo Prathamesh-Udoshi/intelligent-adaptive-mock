@@ -1,41 +1,76 @@
 # Intelligent Adaptive Mock Platform 🧬
 
-A scalable, self-learning "Digital Twin" for backend APIs. This platform sits between your frontend and your real backend, learning behavior patterns in real-time and providing a high-fidelity mock fallback with automatic failover.
+> **Your API's Digital Twin.** A self-learning middleware that observes real traffic, masters your API contract, and provides high-fidelity mocks with zero configuration.
 
-## 🌟 Key Features
+---
 
-*   **Dual-Channel Intelligence**: Automatically learns both **Request (Inbound)** and **Response (Outbound)** JSON structures. It builds a complete contract of what your app sends and what it receives.
-*   **Live Traffic Stream**: A unified server-side log that tracks every request from your real frontend, Postman, or the dashboard—synchronized in real-time across the entire platform.
-*   **Direction-Aware Schema Brain**: Separate controls for Inbound patterns and Outbound results. Manually override the AI's knowledge for either side of the transaction.
-*   **Visual Endpoint Explorer**: A premium dedicated dashboard showing live latency trends, success rates, and side-by-side schema visualizations for every discovered route.
-*   **Automatic AI Failover**: Instantly switches to a high-fidelity mock if the target backend is unreachable, ensuring zero frontend downtime during backend maintenance or crashes.
-*   **Path Normalization & Parameter Detection**: Identifies dynamic segments (IDs, UUIDs) and automatically groups them (e.g., `/users/123` → `/users/{id}`).
-*   **Interactive Documentation (Swagger)**: Generates a professional OpenAPI 3.0 spec pre-filled with learned request bodies for one-click testing.
-*   **Self-Healing Database**: Automatic schema migrations ensure your local data stays up-to-date with current platform logic.
+## 🌩️ The Problem Statement
 
-## 🚀 Quick Start
+Frontend development is often held hostage by the backend. **When the backend is down, slow, or under development, the frontend team stops moving.** 
+- **The "Mock Debt":** Writing manual mocks is tedious and they quickly become outdated compared to the real API.
+- **Resilience Blindness:** It’s hard to test how your app handles 500 errors or high latency without actually breaking the production server.
 
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+## 💡 The Motivation
 
-2. **Configure and Launch**:
-   Define your target backend and a unique database for your current project.
-   ```powershell
-   # Windows PowerShell Example
-   $env:TARGET_URL="http://localhost:8001"
-   $env:DB_NAME="project_alpha.db"
-   cd src
-   python mock_server.py
-   ```
+This platform acts as a **Digital Twin** for your API. It doesn't just mock; it **learns**. 
+By sitting between your app and the real backend, it observes every request and response, building a real-time behavioral model. 
+- **Zero-Config Mocks:** Switch from "Proxy" to "Mock" mode, and the platform takes over using learned behavior.
+- **Failover-First:** If the real backend crashes, the AI instantly provides a mock fallback—your frontend never sees a "Site Cannot Be Reached" error.
+- **Chaos for Quality:** Built-in "Chaos Engine" lets you inject artificial failure and latency to harden your application.
 
-3. **Explore the Interface**:
-   *   **Control Deck**: `http://localhost:8000/` — Manage chaos levels, global modes, and live traffic.
-   *   **Endpoint Explorer**: `http://localhost:8000/admin/explorer` — Deep dive into learned behavior and stats.
-   *   **API Docs (Swagger)**: `http://localhost:8000/admin/docs` — Full interactive testing suite.
+---
 
-## 🏗 Architecture
+## 🛠️ How it Works: The Learning Cycle
+
+### 1. Inbound Intelligence
+The platform detects dynamic URL segments automatically.
+- **Input:** `GET /users/42`, `GET /users/89`
+- **AI Normalization:** `/users/{id}` (Groups these patterns for shared statistics)
+
+### 2. Schema Discovery
+It masters the JSON structure of your requests and responses.
+- **Request (Inbound):** Learns mandatory fields, data types, and nesting.
+- **Response (Outbound):** Captures success/error payloads to generate realistic synthetic data.
+
+### 3. Real-Time Visualization
+Uses **WebSockets** for a zero-polling, instant-update dashboard that streams every transaction as it happens.
+
+---
+
+## ⚡ Quick Start (Step-By-Step)
+
+### 1. Set up the Environment
+Ensure you have Python 3.8+ installed.
+```bash
+# Clone and install
+pip install -r requirements.txt
+```
+
+### 2. Configure and Launch
+Define your target backend and a unique database for your current project.
+```powershell
+# Windows PowerShell Example
+$env:TARGET_URL="http://localhost:8001"  # Your real API
+$env:DB_NAME="project_alpha.db"          # Isolation for this project
+cd src
+python mock_server.py
+```
+
+### 3. Use the Dashboard
+Open your browser to:
+- **Control Deck:** `http://localhost:8000/` — Main panel for Chaos and Mode switching.
+- **Endpoint Explorer:** `http://localhost:8000/admin/explorer` — Visual patterns and stats.
+- **Interactive Docs:** `http://localhost:8000/admin/docs` — Swagger UI for learned APIs.
+
+---
+
+## 📸 Dashboard Preview
+*(Insert Mockup Screenshot Here)*
+> **Live Monitoring:** The dashboard uses WebSockets to show a real-time stream of traffic, including AI-generated mocks vs real backend responses.
+
+---
+
+## 🏗 System Architecture
 
 ```mermaid
 graph TD
@@ -45,7 +80,7 @@ graph TD
         Server --> Norm[Path Normalizer]
         Norm --> DB[(SQLite / SQLAlchemy)]
         DB --> Logic[Mock Logic]
-        Logic -->|Simulated Latency| Gen[Schema Generator]
+        Logic -->|Simulated Latency| Gen[Synthetic Generator]
         Gen --> Client
     end
     
@@ -53,20 +88,22 @@ graph TD
         Server --> Proxy[Async Proxy / HTTPX]
         Proxy --> Target[Real Backend API]
         Target --> Proxy
-        Proxy -->|Capture Cycle| Buffer[Instant Learning Buffer]
+        Proxy -->|Capture Cycle| Buffer[Learning Buffer]
         Proxy -->|If Down| Logic
         Buffer -->|Background Task| Learner[Behavior Learner]
-        Learner -->|Dual-Channel Capture| DB
+        Learner -->|WebSocket Broadcast| Client
+        Learner --> DB
         Proxy --> Client
     end
 ```
 
-## 📂 System Design
+---
 
-- **`src/mock_server.py`**: Core FastAPI engine handling Proxy logic, Global State, and Real-time Log Synchronization.
-- **`src/models.py`**: Data models for dual-channel schemas (Request/Response), chaos configuration, and endpoint metadata.
-- **`src/utils/normalization.py`**: Regex engine for grouping dynamic paths and extracting parameters.
-- **`src/utils/schema_learner.py`**: The "AI Brain"—recursive JSON structure analysis and synthetic response generation.
+## 📂 Project Structure
+- **`src/mock_server.py`**: The core "Traffic Controller" with WebSocket broadcasting.
+- **`src/utils/schema_learner.py`**: The "Brain" that performs recursive JSON structure analysis.
+- **`src/utils/normalization.py`**: Regex-driven path grouping engine.
+- **`static/`**: High-performance Vanilla JS dashboard with WebSocket clients.
 
-## 💡 Pro-Tip: Data Isolation
-Run the server with a different `DB_NAME` for every project you test. This allows you to build specific "behavioral profiles" for different services and switch between them instantly by changing a single environment variable.
+## 💡 Pro-Tip
+Run a different `DB_NAME` for every project. This lets you build "Behavioral Profiles" for different microservices and switch between them instantly.
