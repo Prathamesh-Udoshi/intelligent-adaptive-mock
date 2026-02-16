@@ -267,21 +267,50 @@ async def get_or_create_endpoint(session: AsyncSession, method: str, path_patter
 
 async def store_drift_alert(endpoint_id: int, drift_score: float, drift_summary: str, drift_details: List[Dict]):
     """
-    Stores a contract drift alert in the database.
+    Stores or updates a contract drift alert in the database.
+    Prevents duplicate unresolved alerts for the same endpoint.
     """
     try:
         async with AsyncSessionLocal() as session:
-            drift_alert = ContractDrift(
-                endpoint_id=endpoint_id,
-                drift_score=drift_score,
-                drift_summary=drift_summary,
-                drift_details=drift_details
+            # Check for existing unresolved alerts for this endpoint
+            res = await session.execute(
+                select(ContractDrift).where(
+                    ContractDrift.endpoint_id == endpoint_id,
+                    ContractDrift.is_resolved == False
+                ).order_by(ContractDrift.detected_at.desc())
             )
-            session.add(drift_alert)
+            existing_alerts = res.scalars().all()
+            
+            if existing_alerts:
+                # Update the most recent alert
+                existing = existing_alerts[0]
+                existing.detected_at = datetime.datetime.utcnow()
+                existing.drift_score = drift_score
+                existing.drift_summary = drift_summary
+                existing.drift_details = drift_details
+                
+                # AUTO-CLEANUP: If somehow multiple unresolved alerts existed, resolve the others
+                if len(existing_alerts) > 1:
+                    for orphaned in existing_alerts[1:]:
+                        orphaned.is_resolved = True
+                        orphaned.resolved_at = datetime.datetime.utcnow()
+                    logger.info(f"🧹 Cleaned up {len(existing_alerts)-1} orphaned alerts for endpoint {endpoint_id}")
+                
+                logger.info(f"🔄 Updated existing drift alert for endpoint {endpoint_id}")
+            else:
+                # Create a new alert
+                drift_alert = ContractDrift(
+                    endpoint_id=endpoint_id,
+                    drift_score=drift_score,
+                    drift_summary=drift_summary,
+                    drift_details=drift_details
+                )
+                session.add(drift_alert)
+                logger.info(f"🚨 New drift alert stored for endpoint {endpoint_id}")
+            
             await session.commit()
-            logger.info(f"✅ Drift alert stored for endpoint {endpoint_id}")
     except Exception as e:
-        logger.error(f"❌ Failed to store drift alert: {str(e)}")
+        logger.error(f"❌ Failed to store/update drift alert: {str(e)}")
 
 
 async def process_learning_buffer():
@@ -512,14 +541,28 @@ async def resolve_drift_alert(alert_id: int):
     """
     Mark a drift alert as resolved.
     """
-    async with AsyncSessionLocal() as session:
-        await session.execute(
-            update(ContractDrift)
-            .where(ContractDrift.id == alert_id)
-            .values(is_resolved=True, resolved_at=datetime.datetime.utcnow())
-        )
-        await session.commit()
-        return {"status": "resolved"}
+    try:
+        async with AsyncSessionLocal() as session:
+            # First check if it exists
+            res = await session.execute(select(ContractDrift).where(ContractDrift.id == alert_id))
+            alert = res.scalars().first()
+            if not alert:
+                logger.error(f"❌ Alert {alert_id} not found for resolution")
+                raise HTTPException(status_code=404, detail="Alert not found")
+
+            await session.execute(
+                update(ContractDrift)
+                .where(ContractDrift.id == alert_id)
+                .values(is_resolved=True, resolved_at=datetime.datetime.utcnow())
+            )
+            await session.commit()
+            logger.info(f"✅ Alert {alert_id} marked as resolved")
+            return {"status": "resolved"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error resolving alert {alert_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/endpoints/{endpoint_id}/drift-stats")
 async def get_endpoint_drift_stats(endpoint_id: int):
@@ -527,28 +570,32 @@ async def get_endpoint_drift_stats(endpoint_id: int):
     Get drift statistics for a specific endpoint.
     """
     async with AsyncSessionLocal() as session:
-        # Get all alerts for this endpoint
+        # Get all alerts for calculation
         result = await session.execute(
             select(ContractDrift)
             .where(ContractDrift.endpoint_id == endpoint_id)
             .order_by(ContractDrift.detected_at.desc())
         )
-        alerts = result.scalars().all()
+        all_alerts = result.scalars().all()
         
-        total_alerts = len(alerts)
-        unresolved_alerts = len([a for a in alerts if not a.is_resolved])
-        avg_drift_score = sum(a.drift_score for a in alerts) / total_alerts if total_alerts > 0 else 0
+        unresolved_alerts = [a for a in all_alerts if not a.is_resolved]
+        unresolved_count = len(unresolved_alerts)
         
-        latest_alert = alerts[0] if alerts else None
+        # Priority: Show latest unresolved, or latest resolved if none
+        latest_alert = unresolved_alerts[0] if unresolved_alerts else (all_alerts[0] if all_alerts else None)
+        
+        avg_score = sum(a.drift_score for a in all_alerts) / len(all_alerts) if all_alerts else 0
         
         return {
-            "total_alerts": total_alerts,
-            "unresolved_alerts": unresolved_alerts,
-            "average_drift_score": round(avg_drift_score, 2),
+            "total_alerts": len(all_alerts),
+            "unresolved_alerts": unresolved_count,
+            "average_drift_score": round(avg_score, 2),
             "latest_alert": {
+                "id": latest_alert.id,
                 "detected_at": latest_alert.detected_at.isoformat(),
                 "drift_score": latest_alert.drift_score,
-                "drift_summary": latest_alert.drift_summary
+                "drift_summary": latest_alert.drift_summary,
+                "drift_details": latest_alert.drift_details
             } if latest_alert else None
         }
 
