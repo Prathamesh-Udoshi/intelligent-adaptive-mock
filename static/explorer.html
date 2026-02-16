@@ -142,6 +142,34 @@
             border: 1px solid rgba(164, 142, 255, 0.2);
         }
 
+        .drift-badge {
+            background: rgba(255, 71, 87, 0.1);
+            color: #ff4757;
+            padding: 4px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-left: auto;
+            border: 1px solid rgba(255, 71, 87, 0.2);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
         .path {
             font-family: 'JetBrains Mono', monospace;
             font-size: 18px;
@@ -184,7 +212,9 @@
             font-family: 'JetBrains Mono', monospace;
             font-size: 13px;
             color: var(--accent);
-            overflow-x: auto;
+            overflow: auto;
+            max-height: 400px;
+            max-width: 100%;
             margin-top: 20px;
             border: 1px solid rgba(255, 255, 255, 0.05);
             box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
@@ -255,17 +285,27 @@
                     const card = document.createElement('div');
                     card.className = 'endpoint-card';
 
-                    const statsRes = await fetch(`/admin/endpoints/${ep.id}/stats`);
+                    const [statsRes, driftRes] = await Promise.all([
+                        fetch(`/admin/endpoints/${ep.id}/stats`),
+                        fetch(`/admin/endpoints/${ep.id}/drift-stats`)
+                    ]);
+
                     const stats = await statsRes.json();
+                    const drift = await driftRes.json();
 
                     const distribution = Object.entries(stats.behavior.status_codes || {})
                         .map(([code, prob]) => `${code} (${Math.round(prob * 100)}%)`)
                         .join(', ');
 
+                    const driftHtml = drift.unresolved_alerts > 0
+                        ? `<span class="drift-badge">🚨 ${drift.latest_alert.drift_summary || 'DRIFT DETECTED'}</span>`
+                        : '';
+
                     card.innerHTML = `
                         <div style="display: flex; align-items: center;">
                             <span class="method-badge">${ep.method}</span>
                             <span class="path">${ep.path_pattern}</span>
+                            ${driftHtml}
                         </div>
                         <div class="stats-grid">
                             <div class="stat-item">
@@ -278,15 +318,24 @@
                             </div>
                             <div class="stat-item">
                                 <span class="stat-label">Statuses</span>
-                                <span class="stat-value" style="font-size: 14px;">${distribution || '200 (100%)'}</span>
+                                <span class="stat-value" style="font-size: 14px;">${distribution || 'Awaiting Traffic...'}</span>
                             </div>
                         </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px;">
-                            <div>
+                        
+                        ${drift.unresolved_alerts > 0 ? `
+                        <div style="margin-top: 24px; padding: 16px; background: rgba(255, 71, 87, 0.05); border-radius: 12px; border: 1px solid rgba(255, 71, 87, 0.1);">
+                            <span class="stat-label" style="color: #ff4757;">Active Drift Alert (Score: ${drift.average_drift_score})</span>
+                            <p style="margin: 8px 0 0 0; font-size: 13px; color: #ff4757;">${drift.latest_alert.drift_summary}</p>
+                            <p style="margin: 4px 0 0 0; font-size: 11px; color: var(--text-dim);">Detected: ${new Date(drift.latest_alert.detected_at).toLocaleString()}</p>
+                        </div>
+                        ` : ''}
+
+                        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; margin-top: 24px;">
+                            <div style="min-width: 0;">
                                 <span class="stat-label">Learned Schema (Request)</span>
                                 <pre style="margin-top: 10px;">${JSON.stringify(stats.behavior.request_schema || {}, null, 4)}</pre>
                             </div>
-                            <div>
+                            <div style="min-width: 0;">
                                 <span class="stat-label">Learned Schema (Response)</span>
                                 <pre style="margin-top: 10px;">${JSON.stringify(stats.behavior.schema_preview || {}, null, 4)}</pre>
                             </div>

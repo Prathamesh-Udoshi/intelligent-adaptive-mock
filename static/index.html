@@ -430,6 +430,7 @@
                                     <th>Request</th>
                                     <th>Status</th>
                                     <th>Latency</th>
+                                    <th>Drift</th>
                                 </tr>
                             </thead>
                             <tbody id="logBody"></tbody>
@@ -688,12 +689,14 @@
                     const row = document.createElement("tr");
                     const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
                     const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
+                    const driftHtml = log.has_drift ? `<span title="Contract Drift Detected" style="cursor:help;">🚨</span>` : '';
                     row.innerHTML = `
                         <td>${log.time}</td>
-                        <td><span class=\"badge ${badgeClass}\">${log.type}</span></td>
+                        <td><span class="badge ${badgeClass}">${log.type}</span></td>
                         <td>${log.method} ${log.path}</td>
-                        <td class=\"${statusClass}\">${log.status}</td>
+                        <td class="${statusClass}">${log.status}</td>
                         <td>${log.latency} ms</td>
+                        <td style="text-align: center;">${driftHtml}</td>
                     `;
                     if (logBody.firstChild) logBody.insertBefore(row, logBody.firstChild);
                     else logBody.appendChild(row);
@@ -710,12 +713,14 @@
                 const row = document.createElement("tr");
                 const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
                 const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
+                const driftHtml = log.has_drift ? `<span title="Contract Drift Detected" style="cursor:help;">🚨</span>` : '';
                 row.innerHTML = `
                     <td>${log.time}</td>
                     <td><span class="badge ${badgeClass}">${log.type}</span></td>
                     <td>${log.method} ${log.path}</td>
                     <td class="${statusClass}">${log.status}</td>
                     <td>${log.latency} ms</td>
+                    <td style="text-align: center;">${driftHtml}</td>
                 `;
                 logBody.appendChild(row);
             });
