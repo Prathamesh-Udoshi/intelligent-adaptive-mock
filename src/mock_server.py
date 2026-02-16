@@ -51,7 +51,38 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 # Global State
 PLATFORM_STATE = {
     "mode": "proxy", # "proxy" or "mock"
-    "learning_enabled": True
+    "learning_enabled": True,
+    "active_chaos_profile": "normal"
+}
+
+CHAOS_PROFILES = {
+    "normal": {
+        "name": "Normal Operations",
+        "description": "Standard behavior based on learned patterns.",
+        "global_chaos": 0,
+        "latency_boost": 0,
+        "corrupt_responses": False
+    },
+    "friday_afternoon": {
+        "name": "Friday Afternoon",
+        "description": "High latency and frequent random errors.",
+        "global_chaos": 30,
+        "latency_boost": 1000,
+        "corrupt_responses": False
+    },
+    "db_bottleneck": {
+        "name": "Database Bottleneck",
+        "description": "POST/PUT/PATCH requests are extremely slow.",
+        "global_chaos": 0,
+        "latency_boost_methods": {"POST": 5000, "PUT": 5000, "PATCH": 5000},
+        "corrupt_responses": False
+    },
+    "zombie_api": {
+        "name": "Zombie API",
+        "description": "200 OK status codes but with empty or corrupted payloads.",
+        "global_chaos": 0,
+        "corrupt_responses": True
+    }
 }
 
 # Global Learning Buffer
@@ -135,11 +166,25 @@ async def get_swagger_ui():
 @app.get("/admin/config")
 async def get_config():
     return {
-        "chaos_level": 0, # Note: This is per-endpoint but we return a generic 0 for init
+        "chaos_level": 0, 
         "learning_mode": PLATFORM_STATE["learning_enabled"],
         "platform_mode": PLATFORM_STATE["mode"],
-        "target_url": TARGET_URL
+        "target_url": TARGET_URL,
+        "active_chaos_profile": PLATFORM_STATE["active_chaos_profile"]
     }
+
+@app.get("/admin/chaos/profiles")
+async def get_chaos_profiles():
+    return CHAOS_PROFILES
+
+@app.post("/admin/chaos/profiles")
+async def set_active_chaos_profile(request: Request):
+    data = await request.json()
+    profile = data.get("profile", "normal")
+    if profile in CHAOS_PROFILES:
+        PLATFORM_STATE["active_chaos_profile"] = profile
+        return {"status": "profile_applied", "profile": profile}
+    raise HTTPException(status_code=400, detail="Invalid profile")
 
 @app.post("/admin/chaos")
 async def set_chaos_globally(request: Request):
@@ -618,8 +663,15 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
 
 async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failover=False):
     try:
-        # Apply Chaos
+        # Load Active Profile
+        profile_key = PLATFORM_STATE.get("active_chaos_profile", "normal")
+        profile = CHAOS_PROFILES.get(profile_key, CHAOS_PROFILES["normal"])
+        
+        # Apply Chaos Level
         effective_chaos = chaos.chaos_level if chaos and chaos.is_active else 0
+        if profile.get("global_chaos", 0) > 0:
+            effective_chaos = max(effective_chaos, profile["global_chaos"])
+
         header_chaos = request.headers.get("X-Chaos-Level")
         if header_chaos:
             try:
@@ -627,7 +679,6 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
             except: pass
 
         # Decide Error vs Success
-        # error_rate is from learned behavior, chaos is artificial
         error_prob = behavior.error_rate if behavior else 0
         error_prob += (effective_chaos / 100.0)
         
@@ -635,7 +686,7 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
             log_status = 500
             await add_to_logs(request.method, normalized, log_status, 0, "Mock")
             return JSONResponse(
-                content={"error": "Status Injected (AI/Chaos)", "endpoint": normalized, "failover": is_failover},
+                content={"error": "Status Injected (AI/Chaos)", "endpoint": normalized, "failover": is_failover, "profile": profile["name"]},
                 status_code=log_status
             )
 
@@ -643,8 +694,13 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
         base_latency = behavior.latency_mean if behavior else 50
         latency_std = behavior.latency_std if behavior else 20
         
-        # Add Gaussian noise for realistic variation
-        latency = max(10, np.random.normal(base_latency, latency_std)) + (effective_chaos * 10)
+        # Profile Latency Boosts
+        latency_boost = profile.get("latency_boost", 0)
+        method_boosts = profile.get("latency_boost_methods", {})
+        if request.method in method_boosts:
+            latency_boost = max(latency_boost, method_boosts[request.method])
+            
+        latency = max(10, np.random.normal(base_latency, latency_std)) + (effective_chaos * 10) + latency_boost
         await asyncio.sleep(latency / 1000.0)
         
         # Choose Status Code
@@ -658,6 +714,11 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
                 status_code = 200
         
         # Generate Body
+        if profile.get("corrupt_responses"):
+            mock_body = "xXx" * random.randint(5, 20) + "CORRUPTED_STREAM" + "xXx" * random.randint(5, 20)
+            await add_to_logs(request.method, normalized, 200, latency, "Mock")
+            return Response(content=mock_body, status_code=200, media_type="text/plain")
+
         try:
             req_body = await request.json()
         except:

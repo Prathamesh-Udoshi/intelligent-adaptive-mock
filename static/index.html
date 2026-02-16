@@ -362,6 +362,18 @@
                     <div class="val-large"><span id="chaosVal">0</span>%</div>
                     <input type="range" min="0" max="100" value="0" id="chaosRange">
                     <div class="val-sub">Artificial Failure Probability</div>
+
+                    <div style="margin-top: 20px;">
+                        <div
+                            style="margin-bottom: 8px; color: #888; font-size: 11px; text-transform: uppercase; font-weight: bold;">
+                            Incident Profile</div>
+                        <select id="chaosProfile" onchange="setChaosProfile(this.value)"
+                            style="width: 100%; background: #000; color: white; border: 1px solid #222; padding: 12px; border-radius: 10px; font-family: 'Outfit'; font-size: 14px;">
+                            <!-- Dynamic -->
+                        </select>
+                        <p id="profileDesc"
+                            style="font-size: 11px; color: var(--text-dim); margin-top: 8px; min-height: 30px;"></p>
+                    </div>
                 </div>
 
                 <div class="control-group">
@@ -660,8 +672,41 @@
                 output.innerHTML = data.chaos_level || 0;
                 learningToggle.checked = data.learning_mode;
                 updateModeUI(data.platform_mode);
+
+                await loadProfiles(data.active_chaos_profile);
                 await loadEndpoints();
             } catch (e) { }
+        }
+
+        let platformProfiles = {};
+        async function loadProfiles(activeProfile) {
+            const res = await fetch('/admin/chaos/profiles');
+            platformProfiles = await res.json();
+            const select = document.getElementById("chaosProfile");
+            select.innerHTML = "";
+
+            Object.entries(platformProfiles).forEach(([key, p]) => {
+                const opt = document.createElement("option");
+                opt.value = key;
+                opt.textContent = p.name;
+                if (key === activeProfile) opt.selected = true;
+                select.appendChild(opt);
+            });
+            updateProfileDesc(activeProfile);
+        }
+
+        function updateProfileDesc(key) {
+            const p = platformProfiles[key];
+            if (p) document.getElementById("profileDesc").innerText = p.description;
+        }
+
+        async function setChaosProfile(profile) {
+            await fetch('/admin/chaos/profiles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ profile })
+            });
+            updateProfileDesc(profile);
         }
 
         async function sendTestRequest() {
