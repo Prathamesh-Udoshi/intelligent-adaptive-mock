@@ -17,6 +17,7 @@ By sitting between your app and the real backend, it observes every request and 
 - **Zero-Config Mocks:** Switch from "Proxy" to "Mock" mode, and the platform takes over using learned behavior.
 - **Failover-First:** If the real backend crashes, the AI instantly provides a mock fallback—your frontend never sees a "Site Cannot Be Reached" error.
 - **Chaos for Quality:** Built-in "Chaos Engine" lets you inject artificial failure and latency to harden your application.
+- **Contract Regression Watchdog:** Automatically detects when the backend API changes in breaking ways (missing fields, type changes) and alerts you instantly—preventing silent production failures.
 
 ---
 
@@ -99,10 +100,37 @@ graph TD
 
 ---
 
+## 🚨 Contract Regression Watchdog
+
+The platform continuously monitors your API for **contract drift**—when the real backend's response structure changes in ways that could break your frontend.
+
+### What It Detects:
+- **Missing Fields:** Fields that existed in the learned schema but are now absent from responses
+- **New Fields:** Unexpected fields that appear in responses (low severity)
+- **Type Changes:** When a field changes from `string` to `number`, `object` to `array`, etc.
+
+### How It Works:
+1. **Learning Phase:** The platform observes real API responses and builds a schema model
+2. **Monitoring Phase:** Every subsequent proxy request is compared against the learned schema
+3. **Alert Generation:** When drift is detected, an alert is stored with:
+   - **Drift Score** (0-100): Severity of the changes
+   - **Drift Summary:** Human-readable description (e.g., "2 critical issues, 1 warning")
+   - **Drift Details:** Exact list of what changed and where
+
+### Accessing Drift Alerts:
+- **API Endpoint:** `GET /admin/drift-alerts?unresolved_only=true`
+- **Per-Endpoint Stats:** `GET /admin/endpoints/{id}/drift-stats`
+- **Resolve Alert:** `POST /admin/drift-alerts/{alert_id}/resolve`
+
+**Use Case:** If your backend team renames `user_id` to `userId` without telling you, the Watchdog will immediately flag it as a **high-severity** drift, preventing silent production bugs.
+
+---
+
 ## 📂 Project Structure
 - **`src/mock_server.py`**: The core "Traffic Controller" with WebSocket broadcasting.
 - **`src/utils/schema_learner.py`**: The "Brain" that performs recursive JSON structure analysis.
 - **`src/utils/normalization.py`**: Regex-driven path grouping engine.
+- **`src/utils/drift_detector.py`**: Contract Regression Watchdog engine for detecting schema drift.
 - **`static/`**: High-performance Vanilla JS dashboard with WebSocket clients.
 
 ## 💡 Pro-Tip

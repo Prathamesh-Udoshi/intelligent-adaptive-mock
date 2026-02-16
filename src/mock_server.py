@@ -8,6 +8,7 @@ import logging
 from typing import List, Dict, Any, Optional
 
 import httpx
+import numpy as np
 from fastapi import FastAPI, Request, Response, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,9 +16,10 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, update, text
 
-from models import Base, Endpoint, EndpointBehavior, ChaosConfig
+from models import Base, Endpoint, EndpointBehavior, ChaosConfig, ContractDrift
 from utils.normalization import normalize_path
 from utils.schema_learner import learn_schema, generate_mock_response
+from utils.drift_detector import detect_schema_drift, calculate_drift_score, format_drift_summary
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -217,6 +219,25 @@ async def get_or_create_endpoint(session: AsyncSession, method: str, path_patter
         
     return endpoint
 
+async def store_drift_alert(endpoint_id: int, drift_score: float, drift_summary: str, drift_details: List[Dict]):
+    """
+    Stores a contract drift alert in the database.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            drift_alert = ContractDrift(
+                endpoint_id=endpoint_id,
+                drift_score=drift_score,
+                drift_summary=drift_summary,
+                drift_details=drift_details
+            )
+            session.add(drift_alert)
+            await session.commit()
+            logger.info(f"✅ Drift alert stored for endpoint {endpoint_id}")
+    except Exception as e:
+        logger.error(f"❌ Failed to store drift alert: {str(e)}")
+
+
 async def process_learning_buffer():
     global LEARNING_BUFFER
     async with buffer_lock:
@@ -407,6 +428,80 @@ async def export_openapi():
             "paths": paths
         }
 
+@app.get("/admin/drift-alerts")
+async def get_drift_alerts(endpoint_id: Optional[int] = None, unresolved_only: bool = False):
+    """
+    Get all drift alerts, optionally filtered by endpoint or resolution status.
+    """
+    async with AsyncSessionLocal() as session:
+        query = select(ContractDrift).order_by(ContractDrift.detected_at.desc())
+        
+        if endpoint_id:
+            query = query.where(ContractDrift.endpoint_id == endpoint_id)
+        
+        if unresolved_only:
+            query = query.where(ContractDrift.is_resolved == False)
+        
+        result = await session.execute(query)
+        alerts = result.scalars().all()
+        
+        return [{
+            "id": alert.id,
+            "endpoint_id": alert.endpoint_id,
+            "detected_at": alert.detected_at.isoformat(),
+            "drift_score": alert.drift_score,
+            "drift_summary": alert.drift_summary,
+            "drift_details": alert.drift_details,
+            "is_resolved": alert.is_resolved,
+            "resolved_at": alert.resolved_at.isoformat() if alert.resolved_at else None
+        } for alert in alerts]
+
+@app.post("/admin/drift-alerts/{alert_id}/resolve")
+async def resolve_drift_alert(alert_id: int):
+    """
+    Mark a drift alert as resolved.
+    """
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            update(ContractDrift)
+            .where(ContractDrift.id == alert_id)
+            .values(is_resolved=True, resolved_at=datetime.datetime.utcnow())
+        )
+        await session.commit()
+        return {"status": "resolved"}
+
+@app.get("/admin/endpoints/{endpoint_id}/drift-stats")
+async def get_endpoint_drift_stats(endpoint_id: int):
+    """
+    Get drift statistics for a specific endpoint.
+    """
+    async with AsyncSessionLocal() as session:
+        # Get all alerts for this endpoint
+        result = await session.execute(
+            select(ContractDrift)
+            .where(ContractDrift.endpoint_id == endpoint_id)
+            .order_by(ContractDrift.detected_at.desc())
+        )
+        alerts = result.scalars().all()
+        
+        total_alerts = len(alerts)
+        unresolved_alerts = len([a for a in alerts if not a.is_resolved])
+        avg_drift_score = sum(a.drift_score for a in alerts) / total_alerts if total_alerts > 0 else 0
+        
+        latest_alert = alerts[0] if alerts else None
+        
+        return {
+            "total_alerts": total_alerts,
+            "unresolved_alerts": unresolved_alerts,
+            "average_drift_score": round(avg_drift_score, 2),
+            "latest_alert": {
+                "detected_at": latest_alert.detected_at.isoformat(),
+                "drift_score": latest_alert.drift_score,
+                "drift_summary": latest_alert.drift_summary
+            } if latest_alert else None
+        }
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 async def catch_all(request: Request, path: str, background_tasks: BackgroundTasks):
     method = request.method
@@ -479,6 +574,25 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                 })
                 background_tasks.add_task(process_learning_buffer)
         
+        # CONTRACT DRIFT DETECTION
+        if resp_body_json and behavior and behavior.response_schema:
+            has_drift, drift_issues = detect_schema_drift(behavior.response_schema, resp_body_json)
+            
+            if has_drift:
+                drift_score = calculate_drift_score(drift_issues)
+                drift_summary = format_drift_summary(drift_issues)
+                
+                logger.warning(f"🚨 CONTRACT DRIFT DETECTED: {normalized} - {drift_summary}")
+                
+                # Store drift alert in background
+                background_tasks.add_task(
+                    store_drift_alert,
+                    endpoint.id,
+                    drift_score,
+                    drift_summary,
+                    drift_issues
+                )
+        
         await add_to_logs(method, normalized, proxy_resp.status_code, latency_ms, "Proxy")
 
         return Response(
@@ -517,8 +631,13 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
                 status_code=log_status
             )
 
-        # Simulate Latency
-        latency = (behavior.latency_mean if behavior else 50) + (effective_chaos * 10)
+        # Simulate Latency with realistic variance
+        base_latency = behavior.latency_mean if behavior else 50
+        latency_std = behavior.latency_std if behavior else 20
+        
+        # Add Gaussian noise for realistic variation
+        import numpy as np
+        latency = max(10, np.random.normal(base_latency, latency_std)) + (effective_chaos * 10)
         await asyncio.sleep(latency / 1000.0)
         
         # Choose Status Code

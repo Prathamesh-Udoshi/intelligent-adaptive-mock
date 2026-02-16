@@ -46,3 +46,21 @@ class ChaosConfig(Base):
     is_active = Column(Boolean, default=False)
     
     endpoint = relationship("Endpoint", back_populates="chaos")
+
+class ContractDrift(Base):
+    __tablename__ = "contract_drift"
+    
+    id = Column(Integer, primary_key=True)
+    endpoint_id = Column(Integer, ForeignKey("endpoints.id"))
+    
+    # Drift metadata
+    detected_at = Column(DateTime, default=datetime.datetime.utcnow)
+    drift_score = Column(Float, default=0.0)  # 0-100 severity score
+    drift_summary = Column(String, nullable=True)  # Human-readable summary
+    drift_details = Column(JSON, nullable=True)  # Full list of drift issues
+    
+    # Status tracking
+    is_resolved = Column(Boolean, default=False)
+    resolved_at = Column(DateTime, nullable=True)
+    
+    endpoint = relationship("Endpoint")
