@@ -183,7 +183,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # --- Core Logic ---
 
-async def add_to_logs(method: str, path: str, status: int, latency: int, type: str):
+async def add_to_logs(method: str, path: str, status: int, latency: int, type: str, has_drift: bool = False):
     async with logs_lock:
         log_entry = {
             "time": datetime.datetime.now().strftime("%H:%M:%S"),
@@ -191,7 +191,8 @@ async def add_to_logs(method: str, path: str, status: int, latency: int, type: s
             "path": path,
             "status": status,
             "latency": round(latency),
-            "type": type
+            "type": type,
+            "has_drift": has_drift
         }
         RECENT_LOGS.insert(0, log_entry)
         if len(RECENT_LOGS) > 50:
@@ -267,15 +268,20 @@ async def process_learning_buffer():
                 behavior.latency_mean = (behavior.latency_mean * (1 - alpha)) + (latency * alpha)
                 
                 # Update status code distributions
-                dist = behavior.status_code_distribution or {}
                 status_str = str(status)
-                for k in dist.keys():
-                    dist[k] *= (1 - alpha)
-                dist[status_str] = dist.get(status_str, 0) + alpha
-                
-                # Normalize distribution
-                total = sum(dist.values())
-                behavior.status_code_distribution = {k: v/total for k, v in dist.items()}
+                if not behavior.status_code_distribution:
+                    # First time seeing a status for this endpoint
+                    behavior.status_code_distribution = {status_str: 1.0}
+                else:
+                    # Adaptive update (EMA)
+                    dist = dict(behavior.status_code_distribution)
+                    for k in dist:
+                        dist[k] *= (1 - alpha)
+                    dist[status_str] = dist.get(status_str, 0) + alpha
+                    
+                    # Re-normalize to ensure sum is exactly 1.0
+                    total = sum(dist.values())
+                    behavior.status_code_distribution = {k: v/total for k, v in dist.items()}
                 
                 # Update Error Rate (e.g. 5xx status codes)
                 is_error = 1.0 if status >= 500 else 0.0
@@ -575,10 +581,12 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                 background_tasks.add_task(process_learning_buffer)
         
         # CONTRACT DRIFT DETECTION
+        has_drift_detected = False
         if resp_body_json and behavior and behavior.response_schema:
             has_drift, drift_issues = detect_schema_drift(behavior.response_schema, resp_body_json)
             
             if has_drift:
+                has_drift_detected = True
                 drift_score = calculate_drift_score(drift_issues)
                 drift_summary = format_drift_summary(drift_issues)
                 
@@ -593,7 +601,7 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                     drift_issues
                 )
         
-        await add_to_logs(method, normalized, proxy_resp.status_code, latency_ms, "Proxy")
+        await add_to_logs(method, normalized, proxy_resp.status_code, latency_ms, "Proxy", has_drift=has_drift_detected)
 
         return Response(
             content=proxy_resp.content,
@@ -636,7 +644,6 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
         latency_std = behavior.latency_std if behavior else 20
         
         # Add Gaussian noise for realistic variation
-        import numpy as np
         latency = max(10, np.random.normal(base_latency, latency_std)) + (effective_chaos * 10)
         await asyncio.sleep(latency / 1000.0)
         

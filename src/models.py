@@ -28,7 +28,7 @@ class EndpointBehavior(Base):
     
     # Error rates and status codes
     error_rate = Column(Float, default=0.0)
-    status_code_distribution = Column(JSON, default=lambda: {"200": 1.0}) # Map of code -> probability
+    status_code_distribution = Column(JSON, nullable=True) # Map of code -> probability
     
     # Schema info
     response_schema = Column(JSON, nullable=True) # Representative response body/structure
