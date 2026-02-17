@@ -33,8 +33,10 @@ It masters the JSON structure of your requests and responses.
 - **Request (Inbound):** Learns mandatory fields, data types, and nesting.
 - **Response (Outbound):** Captures success/error payloads to generate realistic synthetic data.
 
-### 3. Real-Time Visualization
-Uses **WebSockets** for a zero-polling, instant-update dashboard that streams every transaction as it happens.
+### 3. Real-Time Analytics & Visualization
+The platform provides two primary interfaces for monitoring your API ecosystem:
+- **Live Transaction Stream:** Uses **WebSockets** for a zero-polling dashboard that shows every request, backend latency, and chaos injection as it happens.
+- **Intelligence Explorer:** Detailed structural analysis of your API's lifecycle, featuring **optimized polling** and **consolidated endpoints** for viewing learned schemas and contract drift history.
 
 ---
 
@@ -59,8 +61,8 @@ python mock_server.py
 
 ### 3. Use the Dashboard
 Open your browser to:
-- **Control Deck:** `http://localhost:8000/` — Main panel for Chaos and Mode switching.
-- **Endpoint Explorer:** `http://localhost:8000/admin/explorer` — Visual patterns and stats.
+- **Control Deck:** `http://localhost:8000/` — Main panel for Chaos and Mode switching (Real-time WebSockets).
+- **Endpoint Explorer:** `http://localhost:8000/admin/explorer` — Structural patterns, learned schemas, and contract drift history with **search and pagination**.
 - **Interactive Docs:** `http://localhost:8000/admin/docs` — Swagger UI for learned APIs.
 
 ---
@@ -126,7 +128,21 @@ The platform continuously monitors your API for **contract drift**—when the re
 
 ---
 
-## 📂 Project Structure
+## � API Intelligence Explorer
+
+The Explorer is designed for deep structural analysis of your API landscape. It handles large-scale environments through several key optimizations:
+
+### Key Features:
+- **Scalable Architecture:** Implements **server-side pagination and search** to handle thousands of endpoints without browser lag.
+- **Consolidated Data Fetching:** Uses a single optimized endpoint (`/admin/explorer/overview`) to retrieve behavior stats, schema previews, and active drift alerts in one round-trip.
+- **Live Sync Controls:**
+    - **Toggle Auto-Sync:** Enable or disable periodic background refreshes.
+    - **Manual Refresh:** Trigger an instant state update from the server.
+- **Schema Deep-Dive:** View learned request and response schemas in a high-fidelity editor-style view.
+
+---
+
+## �📂 Project Structure
 - **`src/mock_server.py`**: The core "Traffic Controller" with WebSocket broadcasting.
 - **`src/utils/schema_learner.py`**: The "Brain" that performs recursive JSON structure analysis.
 - **`src/utils/normalization.py`**: Regex-driven path grouping engine.
