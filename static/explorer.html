@@ -219,50 +219,98 @@
     </nav>
 
     <div class="container">
-        <header>
-            <h1>API Intelligence Explorer</h1>
-            <p class="subtitle">Structural patterns masterfully learned by the Digital Twin.</p>
-            <div id="count" style="font-size: 14px; color: var(--accent); font-weight: 800; margin-top: 15px;"></div>
+        <header style="display: flex; justify-content: space-between; align-items: flex-end;">
+            <div>
+                <h1>API Intelligence Explorer</h1>
+                <p class="subtitle">Structural patterns masterfully learned by the Digital Twin.</p>
+                <div id="count" style="font-size: 14px; color: var(--accent); font-weight: 800; margin-top: 15px;">
+                </div>
+            </div>
+            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 5px;">
+                <div style="position: relative;">
+                    <input type="text" id="searchInput" placeholder="Search patterns..."
+                        style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 10px 15px 10px 35px; border-radius: 12px; color: white; font-size: 13px; width: 250px; outline: none; transition: 0.3s; font-family: 'Outfit';">
+                    <span
+                        style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-dim); font-size: 14px;">🔍</span>
+                </div>
+                <div
+                    style="display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.03); padding: 8px 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                    <label
+                        style="font-size: 11px; font-weight: 800; color: var(--text-dim); cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                        LIVE SYNC
+                        <input type="checkbox" id="autoRefreshToggle" checked onchange="toggleAutoRefresh(this.checked)"
+                            style="accent-color: var(--accent);">
+                    </label>
+                </div>
+                <button onclick="loadEndpoints()"
+                    style="background: var(--accent); color: #000; border: none; padding: 10px 20px; border-radius: 12px; font-weight: 800; font-size: 11px; cursor: pointer; transition: all 0.3s ease;">
+                    REFRESH NOW
+                </button>
+            </div>
         </header>
 
         <div id="explorer-root">
             <p style="text-align: center; color: var(--text-dim);">Analyzing patterns...</p>
         </div>
+
+        <div id="pagination"
+            style="display: flex; justify-content: center; gap: 20px; align-items: center; margin-top: 40px; padding-bottom: 60px;">
+            <button id="prevPage" class="nav-link"
+                style="background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 800; opacity: 0.5;">←
+                PREVIOUS</button>
+            <span id="pageInfo"
+                style="font-size: 12px; color: var(--text-dim); text-transform: uppercase; font-weight: 800; letter-spacing: 1px;">PAGE
+                1 OF 1</span>
+            <button id="nextPage" class="nav-link"
+                style="background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 800;">NEXT
+                →</button>
+        </div>
     </div>
 
     <script>
+        let autoRefreshInterval = null;
+        let currentPage = 1;
+        let pageSize = 10;
+        let searchQuery = "";
+        let totalItems = 0;
+        let searchTimeout = null;
+
         async function loadEndpoints() {
+            const root = document.getElementById('explorer-root');
+            const countEl = document.getElementById('count');
+            const offset = (currentPage - 1) * pageSize;
+
             try {
-                const res = await fetch('/admin/endpoints');
-                const endpoints = await res.json();
-                document.getElementById('count').innerText = `${endpoints.length} ENDPOINTS DISCOVERED`;
+                const url = `/admin/explorer/overview?limit=${pageSize}&offset=${offset}&search=${encodeURIComponent(searchQuery)}`;
+                const res = await fetch(url);
+                const data = await res.json();
 
-                const root = document.getElementById('explorer-root');
-                root.innerHTML = "";
+                totalItems = data.total;
+                countEl.innerText = `${totalItems} ENDPOINTS DISCOVERED`;
 
-                if (endpoints.length === 0) {
-                    root.innerHTML = "<p style='text-align:center; color: var(--text-dim);'>No API traffic observed yet. Start making requests!</p>";
+                if (data.items.length === 0) {
+                    root.innerHTML = searchQuery
+                        ? `<p style='text-align:center; color: var(--text-dim);'>No endpoints matching "${searchQuery}"</p>`
+                        : "<p style='text-align:center; color: var(--text-dim);'>No API traffic observed yet. Start making requests!</p>";
+                    updatePaginationUI();
                     return;
                 }
 
-                for (const ep of endpoints) {
+                const fragment = document.createDocumentFragment();
+
+                for (const ep of data.items) {
                     const card = document.createElement('div');
                     card.className = 'endpoint-card';
 
-                    const [statsRes, driftRes] = await Promise.all([
-                        fetch(`/admin/endpoints/${ep.id}/stats`),
-                        fetch(`/admin/endpoints/${ep.id}/drift-stats`)
-                    ]);
+                    const stats = ep.stats;
+                    const drift = ep.latest_drift;
 
-                    const stats = await statsRes.json();
-                    const drift = await driftRes.json();
-
-                    const distribution = Object.entries(stats.behavior.status_codes || {})
+                    const distribution = Object.entries(stats.status_codes || {})
                         .map(([code, prob]) => `${code} (${Math.round(prob * 100)}%)`)
                         .join(', ');
 
-                    const driftHtml = drift.unresolved_alerts > 0
-                        ? `<span class="drift-badge">🚨 ${drift.latest_alert.drift_summary || 'DRIFT DETECTED'}</span>`
+                    const driftHtml = ep.unresolved_count > 0
+                        ? `<span class="drift-badge">🚨 ${drift.drift_summary || 'DRIFT DETECTED'}</span>`
                         : '';
 
                     card.innerHTML = `
@@ -274,11 +322,11 @@
                         <div class="stats-grid">
                             <div class="stat-item">
                                 <span class="stat-label">Avg Latency</span>
-                                <span class="stat-value">${Math.round(stats.behavior.latency_mean)}ms</span>
+                                <span class="stat-value">${Math.round(stats.latency_mean)}ms</span>
                             </div>
                             <div class="stat-item">
                                 <span class="stat-label">Error Rate</span>
-                                <span class="stat-value" style="color: ${stats.behavior.error_rate > 0.1 ? '#ff4757' : '#5cb85c'}">${Math.round(stats.behavior.error_rate * 100)}%</span>
+                                <span class="stat-value" style="color: ${stats.error_rate > 0.1 ? '#ff4757' : '#5cb85c'}">${Math.round(stats.error_rate * 100)}%</span>
                             </div>
                             <div class="stat-item">
                                 <span class="stat-label">Statuses</span>
@@ -286,25 +334,25 @@
                             </div>
                         </div>
                         
-                        ${drift.unresolved_alerts > 0 ? `
+                        ${ep.unresolved_count > 0 ? `
                         <div style="margin-top: 24px; padding: 16px; background: rgba(255, 71, 87, 0.05); border-radius: 12px; border: 1px solid rgba(255, 71, 87, 0.1);">
                             <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                                <span class="stat-label" style="color: #ff4757;">Active Drift Alert (Score: ${drift.latest_alert.drift_score})</span>
-                                <button onclick="resolveAlert(${drift.latest_alert.id})" style="background: #ff4757; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer;">Resolve</button>
+                                <span class="stat-label" style="color: #ff4757;">Active Drift Alert (Score: ${drift.drift_score})</span>
+                                <button onclick="resolveAlert(${drift.id})" style="background: #ff4757; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer;">Resolve</button>
                             </div>
-                            <p style="margin: 8px 0 12px 0; font-size: 14px; font-weight: 600; color: #ff4757;">${drift.latest_alert.drift_summary}</p>
+                            <p style="margin: 8px 0 12px 0; font-size: 14px; font-weight: 600; color: #ff4757;">${drift.drift_summary}</p>
                             
                             <div style="display: flex; flex-direction: column; gap: 8px;">
                                 ${(function () {
-                                let details = drift.latest_alert.drift_details || [];
+                                let details = drift.drift_details || [];
                                 if (typeof details === 'string') try { details = JSON.parse(details); } catch (e) { details = []; }
                                 return details.map(d => `
-                                        <div style="background: rgba(255, 71, 87, 0.1); padding: 8px 12px; border-radius: 6px; font-size: 11px; border-left: 3px solid #ff4757;">
-                                            <div style="font-weight: bold; color: #ff4757; text-transform: uppercase; font-size: 9px; margin-bottom: 2px;">${d.type.replace('_', ' ')}</div>
-                                            <code style="color: var(--text-main);">${d.path}</code>
-                                            <div style="color: var(--text-dim); margin-top: 2px;">${d.message}</div>
-                                        </div>
-                                    `).join('');
+                                            <div style="background: rgba(255, 71, 87, 0.1); padding: 8px 12px; border-radius: 6px; font-size: 11px; border-left: 3px solid #ff4757;">
+                                                <div style="font-weight: bold; color: #ff4757; text-transform: uppercase; font-size: 9px; margin-bottom: 2px;">${d.type.replace('_', ' ')}</div>
+                                                <code style="color: var(--text-main);">${d.path}</code>
+                                                <div style="color: var(--text-dim); margin-top: 2px;">${d.message}</div>
+                                            </div>
+                                        `).join('');
                             })()}
                             </div>
                         </div>
@@ -313,19 +361,39 @@
                         <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; margin-top: 24px;">
                             <div style="min-width: 0;">
                                 <span class="stat-label">Learned Schema (Request)</span>
-                                <pre style="margin-top: 10px;">${JSON.stringify(stats.behavior.request_schema || {}, null, 4)}</pre>
+                                <pre style="margin-top: 10px;">${JSON.stringify(stats.request_schema || {}, null, 4)}</pre>
                             </div>
                             <div style="min-width: 0;">
                                 <span class="stat-label">Learned Schema (Response)</span>
-                                <pre style="margin-top: 10px;">${JSON.stringify(stats.behavior.schema_preview || {}, null, 4)}</pre>
+                                <pre style="margin-top: 10px;">${JSON.stringify(stats.schema_preview || {}, null, 4)}</pre>
                             </div>
                         </div>
                     `;
-                    root.appendChild(card);
+                    fragment.appendChild(card);
                 }
+
+                // Only update if we successfully fetched everything
+                root.innerHTML = "";
+                root.appendChild(fragment);
+                updatePaginationUI();
+
             } catch (e) {
                 console.error(e);
             }
+        }
+
+        function updatePaginationUI() {
+            const totalPages = Math.ceil(totalItems / pageSize) || 1;
+            document.getElementById('pageInfo').innerText = `PAGE ${currentPage} OF ${totalPages}`;
+
+            const prev = document.getElementById('prevPage');
+            const next = document.getElementById('nextPage');
+
+            prev.style.opacity = currentPage > 1 ? "1" : "0.3";
+            prev.style.pointerEvents = currentPage > 1 ? "auto" : "none";
+
+            next.style.opacity = currentPage < totalPages ? "1" : "0.3";
+            next.style.pointerEvents = currentPage < totalPages ? "auto" : "none";
         }
 
         async function resolveAlert(alertId) {
@@ -345,8 +413,40 @@
             }
         }
 
+        function toggleAutoRefresh(enabled) {
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            if (enabled) {
+                autoRefreshInterval = setInterval(loadEndpoints, 30000); // 30s is safer for pagination
+            }
+        }
+
+        // Event Listeners
+        document.getElementById('prevPage').onclick = () => {
+            if (currentPage > 1) {
+                currentPage--;
+                loadEndpoints();
+            }
+        };
+
+        document.getElementById('nextPage').onclick = () => {
+            if (currentPage < Math.ceil(totalItems / pageSize)) {
+                currentPage++;
+                loadEndpoints();
+            }
+        };
+
+        document.getElementById('searchInput').oninput = (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                searchQuery = e.target.value;
+                currentPage = 1; // Reset to page 1 on search
+                loadEndpoints();
+            }, 300);
+        };
+
+        // Initial load
         loadEndpoints();
-        setInterval(loadEndpoints, 5000);
+        toggleAutoRefresh(true);
     </script>
 </body>
 
