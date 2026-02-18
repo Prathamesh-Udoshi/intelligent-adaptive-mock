@@ -253,6 +253,79 @@
             </div>
         </header>
 
+        <!-- Health Legend -->
+        <div id="healthLegend"
+            style="margin-bottom: 20px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); background: rgba(0,0,0,0.3); overflow: hidden; transition: all 0.3s ease;">
+            <button
+                onclick="document.getElementById('legendBody').classList.toggle('hidden'); this.querySelector('.arrow').textContent = document.getElementById('legendBody').classList.contains('hidden') ? '▸' : '▾';"
+                style="width: 100%; background: none; border: none; padding: 12px 20px; cursor: pointer; display: flex; align-items: center; gap: 10px; color: #aaa; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; text-align: left;">
+                <span style="font-size: 14px;">🩺</span>
+                Health Status Legend
+                <span class="arrow" style="margin-left: auto; font-size: 12px; color: #555;">▾</span>
+            </button>
+            <div id="legendBody" style="padding: 0 20px 18px 20px;">
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                    <!-- Healthy -->
+                    <div
+                        style="padding: 14px 16px; border-radius: 10px; background: rgba(92, 184, 92, 0.06); border: 1px solid rgba(92, 184, 92, 0.12);">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <span style="font-size: 16px;">🟢</span>
+                            <span
+                                style="font-size: 12px; font-weight: 900; color: #5cb85c; letter-spacing: 0.5px;">HEALTHY</span>
+                            <span style="font-size: 10px; color: #5cb85c88; font-weight: 600; margin-left: auto;">80 –
+                                100</span>
+                        </div>
+                        <p style="font-size: 11px; color: #888; line-height: 1.5; margin: 0;">All metrics within normal
+                            baselines. Latency, error rate, and response sizes are stable. No action needed.</p>
+                    </div>
+                    <!-- Degraded -->
+                    <div
+                        style="padding: 14px 16px; border-radius: 10px; background: rgba(240, 173, 78, 0.06); border: 1px solid rgba(240, 173, 78, 0.12);">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <span style="font-size: 16px;">🟡</span>
+                            <span
+                                style="font-size: 12px; font-weight: 900; color: #f0ad4e; letter-spacing: 0.5px;">DEGRADED</span>
+                            <span style="font-size: 10px; color: #f0ad4e88; font-weight: 600; margin-left: auto;">50 –
+                                79</span>
+                        </div>
+                        <p style="font-size: 11px; color: #888; line-height: 1.5; margin: 0;">One or more anomalies
+                            detected — possible latency spikes, elevated error rates, or unusual response sizes. Review
+                            recommended.</p>
+                    </div>
+                    <!-- Critical -->
+                    <div
+                        style="padding: 14px 16px; border-radius: 10px; background: rgba(255, 71, 87, 0.06); border: 1px solid rgba(255, 71, 87, 0.12);">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <span style="font-size: 16px;">🔴</span>
+                            <span
+                                style="font-size: 12px; font-weight: 900; color: #ff4757; letter-spacing: 0.5px;">CRITICAL</span>
+                            <span style="font-size: 10px; color: #ff475788; font-weight: 600; margin-left: auto;">0 –
+                                49</span>
+                        </div>
+                        <p style="font-size: 11px; color: #888; line-height: 1.5; margin: 0;">Multiple severe anomalies.
+                            Significant latency increase, error rate spikes, or data integrity issues. Immediate
+                            attention required.</p>
+                    </div>
+                </div>
+                <div
+                    style="margin-top: 14px; padding: 10px 14px; border-radius: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04);">
+                    <div
+                        style="font-size: 10px; font-weight: 800; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">
+                        What we monitor</div>
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                        <span style="font-size: 11px; color: #777;">⚡ <strong style="color: #aaa;">Latency</strong> —
+                            spikes beyond 2σ from learned mean</span>
+                        <span style="font-size: 11px; color: #777;">❌ <strong style="color: #aaa;">Error Rate</strong> —
+                            jumps above 3× baseline</span>
+                        <span style="font-size: 11px; color: #777;">📦 <strong style="color: #aaa;">Response
+                                Size</strong> — changes beyond 3× average</span>
+                        <span style="font-size: 11px; color: #777;">📋 <strong style="color: #aaa;">Contract
+                                Drift</strong> — active structural alerts</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="explorer-root">
             <p style="text-align: center; color: var(--text-dim);">Analyzing patterns...</p>
         </div>
@@ -308,6 +381,7 @@
 
                     const stats = ep.stats;
                     const drift = ep.latest_drift;
+                    const health = ep.health || { health_score: 100, status: 'healthy', anomalies: [] };
 
                     const distribution = Object.entries(stats.status_codes || {})
                         .map(([code, prob]) => `${code} (${Math.round(prob * 100)}%)`)
@@ -317,11 +391,27 @@
                         ? `<span class="drift-badge">🚨 ${drift.drift_summary || 'DRIFT DETECTED'}</span>`
                         : '';
 
+                    // Health indicator
+                    const healthIcon = health.status === 'healthy' ? '🟢' : health.status === 'degraded' ? '🟡' : '🔴';
+                    const healthColor = health.status === 'healthy' ? '#5cb85c' : health.status === 'degraded' ? '#f0ad4e' : '#ff4757';
+                    const healthBadge = health.observations > 0
+                        ? `<span style="margin-left: auto; font-size: 12px; padding: 3px 10px; border-radius: 20px; background: ${healthColor}15; color: ${healthColor}; border: 1px solid ${healthColor}33; font-weight: 700; letter-spacing: 0.5px;">${healthIcon} ${Math.round(health.health_score)}</span>`
+                        : '';
+
+                    // Anomaly reasons mini-list
+                    const anomalyHtml = (health.anomalies && health.anomalies.length > 0)
+                        ? `<div style="margin-top: 12px; padding: 10px 14px; background: rgba(240, 173, 78, 0.06); border-radius: 8px; border: 1px solid rgba(240, 173, 78, 0.15);">
+                            <div style="font-size: 10px; font-weight: 800; color: #f0ad4e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">⚡ Active Anomalies</div>
+                            ${health.anomalies.map(a => `<div style="font-size: 11px; color: ${a.severity === 'high' ? '#ff4757' : '#f0ad4e'}; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.03);">• ${a.message}</div>`).join('')}
+                           </div>`
+                        : '';
+
                     card.innerHTML = `
                         <div style="display: flex; align-items: center;">
                             <span class="method-badge">${ep.method}</span>
                             <span class="path">${ep.path_pattern}</span>
                             ${driftHtml}
+                            ${healthBadge}
                         </div>
                         <div class="stats-grid">
                             <div class="stat-item">
@@ -333,10 +423,15 @@
                                 <span class="stat-value" style="color: ${stats.error_rate > 0.1 ? '#ff4757' : '#5cb85c'}">${Math.round(stats.error_rate * 100)}%</span>
                             </div>
                             <div class="stat-item">
+                                <span class="stat-label">Health</span>
+                                <span class="stat-value" style="color: ${healthColor}; font-size: 16px;">${healthIcon} ${health.status.toUpperCase()}</span>
+                            </div>
+                            <div class="stat-item">
                                 <span class="stat-label">Statuses</span>
                                 <span class="stat-value" style="font-size: 14px;">${distribution || 'Awaiting Traffic...'}</span>
                             </div>
                         </div>
+                        ${anomalyHtml}
                         
                         ${ep.unresolved_count > 0 ? `
                         <div style="margin-top: 24px; padding: 16px; background: rgba(255, 71, 87, 0.05); border-radius: 12px; border: 1px solid rgba(255, 71, 87, 0.1);">

@@ -16,10 +16,11 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, update, text
 
-from models import Base, Endpoint, EndpointBehavior, ChaosConfig, ContractDrift
+from models import Base, Endpoint, EndpointBehavior, ChaosConfig, ContractDrift, HealthMetric
 from utils.normalization import normalize_path
 from utils.schema_learner import learn_schema, generate_mock_response
 from utils.drift_detector import detect_schema_drift, calculate_drift_score, format_drift_summary, narrate_drift
+from utils.health_monitor import HealthMonitor
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -90,6 +91,9 @@ LEARNING_BUFFER = []
 RECENT_LOGS = [] # Store last 50 requests for dashboard monitoring
 buffer_lock = asyncio.Lock()
 logs_lock = asyncio.Lock()
+
+# Health Monitor (AI Anomaly Detection)
+health_monitor = HealthMonitor()
 
 # WebSocket Manager
 class ConnectionManager:
@@ -237,7 +241,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # --- Core Logic ---
 
-async def add_to_logs(method: str, path: str, status: int, latency: int, type: str, has_drift: bool = False):
+async def add_to_logs(method: str, path: str, status: int, latency: int, type: str, has_drift: bool = False, health_info: dict = None):
     async with logs_lock:
         log_entry = {
             "time": datetime.datetime.now().strftime("%H:%M:%S"),
@@ -246,14 +250,20 @@ async def add_to_logs(method: str, path: str, status: int, latency: int, type: s
             "status": status,
             "latency": round(latency),
             "type": type,
-            "has_drift": has_drift
+            "has_drift": has_drift,
+            "health": health_info.get("status", "healthy") if health_info else "healthy",
+            "health_score": health_info.get("health_score", 100) if health_info else 100
         }
         RECENT_LOGS.insert(0, log_entry)
         if len(RECENT_LOGS) > 50:
             RECENT_LOGS.pop()
     
-    # Broadcast to all dashboard clients
-    await manager.broadcast({"type": "update", "data": log_entry})
+    # Broadcast to all dashboard clients (includes health + global status)
+    broadcast_data = {"type": "update", "data": log_entry}
+    if health_info and health_info.get("anomalies"):
+        broadcast_data["health_alert"] = health_info
+    broadcast_data["global_health"] = health_monitor.get_global_health()
+    await manager.broadcast(broadcast_data)
 
 async def get_or_create_endpoint(session: AsyncSession, method: str, path_pattern: str):
     result = await session.execute(
@@ -321,6 +331,27 @@ async def store_drift_alert(endpoint_id: int, drift_score: float, drift_summary:
     except Exception as e:
         logger.error(f"❌ Failed to store/update drift alert: {str(e)}")
 
+
+async def store_health_metric(endpoint_id: int, latency_ms: float, status_code: int, response_size: int, health_result: dict):
+    """Background task: stores a health metric snapshot in the database."""
+    try:
+        async with AsyncSessionLocal() as session:
+            metric = HealthMetric(
+                endpoint_id=endpoint_id,
+                latency_ms=latency_ms,
+                status_code=status_code,
+                response_size_bytes=response_size,
+                is_error=status_code >= 400,
+                latency_anomaly=health_result.get("latency_anomaly", False),
+                error_spike=health_result.get("error_spike", False),
+                size_anomaly=health_result.get("size_anomaly", False),
+                health_score=health_result.get("health_score", 100.0),
+                anomaly_reasons=[a["message"] for a in health_result.get("anomalies", [])]
+            )
+            session.add(metric)
+            await session.commit()
+    except Exception as e:
+        logger.error(f"❌ Failed to store health metric: {str(e)}")
 
 async def process_learning_buffer():
     global LEARNING_BUFFER
@@ -609,6 +640,60 @@ async def get_endpoint_drift_stats(endpoint_id: int):
         }
 
 
+# --- Health Monitoring API Endpoints ---
+
+@app.get("/admin/health")
+async def get_all_health():
+    """
+    Returns health data for all monitored endpoints.
+    """
+    return {
+        "global": health_monitor.get_global_health(),
+        "endpoints": health_monitor.get_all_endpoint_health()
+    }
+
+@app.get("/admin/health/global")
+async def get_global_health():
+    """
+    Returns the aggregated platform health score.
+    """
+    return health_monitor.get_global_health()
+
+@app.get("/admin/health/{endpoint_id}")
+async def get_endpoint_health(endpoint_id: int):
+    """
+    Returns health data for a specific endpoint.
+    """
+    health = health_monitor.get_endpoint_health(endpoint_id)
+    
+    # Also get recent health metrics from DB for historical context
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(HealthMetric)
+            .where(HealthMetric.endpoint_id == endpoint_id)
+            .order_by(HealthMetric.recorded_at.desc())
+            .limit(20)
+        )
+        recent_metrics = result.scalars().all()
+    
+    return {
+        "current": health,
+        "history": [
+            {
+                "recorded_at": m.recorded_at.isoformat(),
+                "latency_ms": m.latency_ms,
+                "status_code": m.status_code,
+                "health_score": m.health_score,
+                "latency_anomaly": m.latency_anomaly,
+                "error_spike": m.error_spike,
+                "size_anomaly": m.size_anomaly,
+                "anomaly_reasons": m.anomaly_reasons
+            }
+            for m in recent_metrics
+        ]
+    }
+
+
 @app.get("/admin/explorer/overview")
 async def get_explorer_overview(search: Optional[str] = None, limit: int = 10, offset: int = 0):
     """
@@ -652,6 +737,7 @@ async def get_explorer_overview(search: Optional[str] = None, limit: int = 10, o
                 "id": ep.id,
                 "method": ep.method,
                 "path_pattern": ep.path_pattern,
+                "health": health_monitor.get_endpoint_health(ep.id),
                 "stats": {
                     "latency_mean": behavior.latency_mean if behavior else 0,
                     "error_rate": behavior.error_rate if behavior else 0,
@@ -777,7 +863,49 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                     drift_issues
                 )
         
-        await add_to_logs(method, normalized, proxy_resp.status_code, latency_ms, "Proxy", has_drift=has_drift_detected)
+        # HEALTH MONITORING (AI Anomaly Detection)
+        response_size = len(proxy_resp.content) if proxy_resp.content else 0
+        
+        # Check if this endpoint has unresolved drift alerts
+        has_active_drift_for_health = has_drift_detected
+        if not has_active_drift_for_health and behavior:
+            async with AsyncSessionLocal() as health_session:
+                drift_check = await health_session.execute(
+                    select(ContractDrift)
+                    .where(ContractDrift.endpoint_id == endpoint.id, ContractDrift.is_resolved == False)
+                    .limit(1)
+                )
+                has_active_drift_for_health = drift_check.scalars().first() is not None
+        
+        health_result = health_monitor.evaluate_request(
+            endpoint_id=endpoint.id,
+            latency_ms=latency_ms,
+            status_code=proxy_resp.status_code,
+            response_size=response_size,
+            learned_latency_mean=behavior.latency_mean if behavior else 0,
+            learned_latency_std=behavior.latency_std if behavior else 0,
+            learned_error_rate=behavior.error_rate if behavior else 0,
+            has_active_drift=has_active_drift_for_health,
+            path_pattern=normalized
+        )
+        
+        # Log anomalies to console
+        if health_result["anomalies"]:
+            for anomaly in health_result["anomalies"]:
+                severity_icon = "🔴" if anomaly["severity"] == "high" else "🟡"
+                logger.warning(f"{severity_icon} HEALTH ANOMALY [{normalized}]: {anomaly['message']}")
+        
+        # Store health metric in background
+        background_tasks.add_task(
+            store_health_metric,
+            endpoint.id,
+            latency_ms,
+            proxy_resp.status_code,
+            response_size,
+            health_result
+        )
+        
+        await add_to_logs(method, normalized, proxy_resp.status_code, latency_ms, "Proxy", has_drift=has_drift_detected, health_info=health_result)
 
         return Response(
             content=proxy_resp.content,

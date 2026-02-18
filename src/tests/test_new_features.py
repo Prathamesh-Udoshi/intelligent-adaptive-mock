@@ -108,10 +108,78 @@ def test_normalizer():
     
     print(f"\n[{'PASS' if all_pass else 'PARTIAL'}] Path normalizer handles varied formats!")
 
+def test_health_monitor():
+    print("\n" + "=" * 60)
+    print("TEST 4: AI Anomaly Detection (Health Monitor)")
+    print("=" * 60)
+    
+    from utils.health_monitor import HealthMonitor
+    
+    hm = HealthMonitor()
+    
+    # 4a: Normal traffic (should be healthy)
+    for i in range(10):
+        hm.evaluate_request(
+            endpoint_id=1, latency_ms=180 + (i * 3), status_code=200,
+            response_size=1500, learned_latency_mean=200, learned_latency_std=50,
+            learned_error_rate=0.02, path_pattern="/users/{id}"
+        )
+    h = hm.get_endpoint_health(1)
+    assert h["health_score"] == 100.0, f"Normal traffic should be 100, got {h['health_score']}"
+    assert h["status"] == "healthy", f"Should be healthy, got {h['status']}"
+    print(f"  [PASS] Normal traffic: score={h['health_score']}, status={h['status']}")
+    
+    # 4b: Latency spike (>2 sigma)
+    r = hm.evaluate_request(
+        endpoint_id=1, latency_ms=500, status_code=200,
+        response_size=1500, learned_latency_mean=200, learned_latency_std=50,
+        learned_error_rate=0.02, path_pattern="/users/{id}"
+    )
+    assert r["latency_anomaly"], "Should detect latency anomaly"
+    assert r["health_score"] < 100, f"Score should drop, got {r['health_score']}"
+    print(f"  [PASS] Latency spike: score={r['health_score']}, anomaly_detected=True")
+    
+    # 4c: Error rate spike (>3x baseline)
+    for i in range(5):
+        hm.evaluate_request(
+            endpoint_id=2, latency_ms=100, status_code=500,
+            response_size=50, learned_latency_mean=100, learned_latency_std=20,
+            learned_error_rate=0.02, path_pattern="/orders"
+        )
+    h2 = hm.get_endpoint_health(2)
+    assert h2["error_spike"], "Should detect error spike"
+    assert h2["health_score"] < 80, f"Score should be degraded, got {h2['health_score']}"
+    print(f"  [PASS] Error spike: score={h2['health_score']}, error_spike=True")
+    
+    # 4d: Response size anomaly
+    hm2 = HealthMonitor()
+    for i in range(8):
+        hm2.evaluate_request(
+            endpoint_id=3, latency_ms=100, status_code=200,
+            response_size=10000, learned_latency_mean=100, learned_latency_std=20,
+            learned_error_rate=0.0, path_pattern="/data/export"
+        )
+    r3 = hm2.evaluate_request(
+        endpoint_id=3, latency_ms=100, status_code=200,
+        response_size=100, learned_latency_mean=100, learned_latency_std=20,  # 100x smaller
+        learned_error_rate=0.0, path_pattern="/data/export"
+    )
+    assert r3["size_anomaly"], "Should detect size anomaly"
+    print(f"  [PASS] Size drift: score={r3['health_score']}, size_anomaly=True")
+    
+    # 4e: Global health aggregation
+    gh = hm.get_global_health()
+    assert gh["endpoints_monitored"] == 2, f"Should monitor 2 endpoints, got {gh['endpoints_monitored']}"
+    assert gh["anomaly_count"] >= 1, f"Should have anomalies, got {gh['anomaly_count']}"
+    print(f"  [PASS] Global health: score={gh['score']}, monitored={gh['endpoints_monitored']}, anomalies={gh['anomaly_count']}")
+    
+    print("\n[PASS] All health monitoring checks passed!")
+
 if __name__ == "__main__":
     test_smart_mock()
     test_narrator()
     test_normalizer()
+    test_health_monitor()
     print("\n" + "=" * 60)
     print("ALL VERIFICATION TESTS COMPLETE")
     print("=" * 60)

@@ -352,6 +352,53 @@
     </nav>
 
     <div class="dashboard-container">
+        <!-- Global Health Banner (AI Anomaly Detection) -->
+        <div id="healthBanner"
+            style="display: none; margin-bottom: 24px; padding: 16px 24px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.4); backdrop-filter: blur(10px); transition: all 0.5s ease;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 14px;">
+                    <span id="healthIcon" style="font-size: 28px;">🟢</span>
+                    <div>
+                        <div
+                            style="font-size: 13px; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 1px;">
+                            Platform Health</div>
+                        <div id="healthSubtext" style="font-size: 11px; color: #888; margin-top: 2px;">All systems
+                            operational</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="text-align: center;">
+                        <div id="healthScoreValue"
+                            style="font-size: 28px; font-weight: 900; color: #5cb85c; font-family: 'JetBrains Mono', monospace;">
+                            100</div>
+                        <div style="font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: 1px;">Score
+                        </div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div id="healthEndpoints"
+                            style="font-size: 28px; font-weight: 900; color: #888; font-family: 'JetBrains Mono', monospace;">
+                            0</div>
+                        <div style="font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: 1px;">
+                            Monitored</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div id="healthAnomalies"
+                            style="font-size: 28px; font-weight: 900; color: #888; font-family: 'JetBrains Mono', monospace;">
+                            0</div>
+                        <div style="font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: 1px;">
+                            Anomalies</div>
+                    </div>
+                </div>
+            </div>
+            <!-- Mini health bar -->
+            <div
+                style="margin-top: 12px; height: 4px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden;">
+                <div id="healthBar"
+                    style="height: 100%; width: 100%; background: #5cb85c; border-radius: 4px; transition: width 0.8s ease, background 0.5s ease;">
+                </div>
+            </div>
+        </div>
+
         <div class="grid">
             <!-- Left Panel: Controls -->
             <div class="panel">
@@ -442,6 +489,7 @@
                                     <th>Request</th>
                                     <th>Status</th>
                                     <th>Latency</th>
+                                    <th>Health</th>
                                     <th>Drift</th>
                                 </tr>
                             </thead>
@@ -735,18 +783,24 @@
                     const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
                     const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
                     const driftHtml = log.has_drift ? `<span title="Contract Drift Detected" style="cursor:help;">🚨</span>` : '';
+                    const healthDot = log.health === 'critical' ? '🔴' : log.health === 'degraded' ? '🟡' : '🟢';
                     row.innerHTML = `
                         <td>${log.time}</td>
                         <td><span class="badge ${badgeClass}">${log.type}</span></td>
                         <td>${log.method} ${log.path}</td>
                         <td class="${statusClass}">${log.status}</td>
                         <td>${log.latency} ms</td>
+                        <td style="text-align: center;">${healthDot}</td>
                         <td style="text-align: center;">${driftHtml}</td>
                     `;
                     if (logBody.firstChild) logBody.insertBefore(row, logBody.firstChild);
                     else logBody.appendChild(row);
                     if (logBody.children.length > 50) logBody.removeChild(logBody.lastChild);
                     updateChart(log.latency, log.type);
+                    // Update health banner from WS broadcast
+                    if (message.global_health) {
+                        updateHealthBanner(message.global_health);
+                    }
                 }
             };
             socket.onclose = () => setTimeout(connectWebSocket, 3000);
@@ -759,12 +813,14 @@
                 const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
                 const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
                 const driftHtml = log.has_drift ? `<span title="Contract Drift Detected" style="cursor:help;">🚨</span>` : '';
+                const healthDot = log.health === 'critical' ? '🔴' : log.health === 'degraded' ? '🟡' : '🟢';
                 row.innerHTML = `
                     <td>${log.time}</td>
                     <td><span class="badge ${badgeClass}">${log.type}</span></td>
                     <td>${log.method} ${log.path}</td>
                     <td class="${statusClass}">${log.status}</td>
                     <td>${log.latency} ms</td>
+                    <td style="text-align: center;">${healthDot}</td>
                     <td style="text-align: center;">${driftHtml}</td>
                 `;
                 logBody.appendChild(row);
@@ -783,6 +839,47 @@
                 await fetch(ep.path, fetchOpts);
             } catch (e) { }
         }
+
+        // --- Health Banner ---
+        function updateHealthBanner(health) {
+            const banner = document.getElementById('healthBanner');
+            if (!health || health.endpoints_monitored === 0) {
+                banner.style.display = 'none';
+                return;
+            }
+            banner.style.display = 'block';
+
+            const score = Math.round(health.score);
+            const icon = health.status === 'healthy' ? '🟢' : health.status === 'degraded' ? '🟡' : '🔴';
+            const color = health.status === 'healthy' ? '#5cb85c' : health.status === 'degraded' ? '#f0ad4e' : '#ff4757';
+            const subtext = health.status === 'healthy' ? 'All systems operational'
+                : health.status === 'degraded' ? `${health.anomaly_count} anomaly(s) detected — review recommended`
+                    : `${health.anomaly_count} anomaly(s) — immediate attention required`;
+
+            document.getElementById('healthIcon').textContent = icon;
+            document.getElementById('healthSubtext').textContent = subtext;
+            document.getElementById('healthSubtext').style.color = color;
+
+            const scoreEl = document.getElementById('healthScoreValue');
+            scoreEl.textContent = score;
+            scoreEl.style.color = color;
+
+            document.getElementById('healthEndpoints').textContent = health.endpoints_monitored;
+            const anomalyEl = document.getElementById('healthAnomalies');
+            anomalyEl.textContent = health.anomaly_count;
+            anomalyEl.style.color = health.anomaly_count > 0 ? '#ff4757' : '#888';
+
+            const bar = document.getElementById('healthBar');
+            bar.style.width = score + '%';
+            bar.style.background = color;
+
+            // Pulse animation for degraded/critical
+            banner.style.borderColor = health.status === 'healthy' ? 'rgba(255,255,255,0.05)' : color + '44';
+            banner.style.boxShadow = health.status !== 'healthy' ? `0 0 20px ${color}22` : 'none';
+        }
+
+        // Initial health fetch
+        fetch('/admin/health/global').then(r => r.json()).then(updateHealthBanner).catch(() => { });
     </script>
 </body>
 

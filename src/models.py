@@ -64,3 +64,30 @@ class ContractDrift(Base):
     resolved_at = Column(DateTime, nullable=True)
     
     endpoint = relationship("Endpoint")
+
+class HealthMetric(Base):
+    __tablename__ = "health_metrics"
+    
+    id = Column(Integer, primary_key=True)
+    endpoint_id = Column(Integer, ForeignKey("endpoints.id"))
+    
+    # Snapshot timestamp
+    recorded_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    # Measurements
+    latency_ms = Column(Float, default=0.0)
+    status_code = Column(Integer, default=200)
+    response_size_bytes = Column(Integer, default=0)
+    is_error = Column(Boolean, default=False)
+    
+    # Anomaly flags (set by HealthMonitor)
+    latency_anomaly = Column(Boolean, default=False)
+    error_spike = Column(Boolean, default=False)
+    size_anomaly = Column(Boolean, default=False)
+    
+    # Overall health score for this observation (0-100, 100=healthy)
+    health_score = Column(Float, default=100.0)
+    anomaly_reasons = Column(JSON, nullable=True)  # List of anomaly reason strings
+    
+    endpoint = relationship("Endpoint")
+
