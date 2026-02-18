@@ -175,11 +175,103 @@ def test_health_monitor():
     
     print("\n[PASS] All health monitoring checks passed!")
 
+def test_type_exporter():
+    print("\n" + "=" * 60)
+    print("TEST 5: Type Exporter (TypeScript / Pydantic / JSON Schema)")
+    print("=" * 60)
+    
+    from utils.type_exporter import (
+        export_all_typescript, export_all_pydantic, export_all_json_schema,
+        schema_to_typescript, schema_to_pydantic, schema_to_json_schema
+    )
+    
+    # Realistic schema mimicking what schema_learner produces
+    test_schema = {
+        "id": 42,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "is_active": True,
+        "score": 98.5,
+        "created_at": "2024-01-15T10:30:00Z",
+        "profile": {
+            "avatar_url": "https://example.com/img.png",
+            "bio": "A developer",
+            "followers_count": 150
+        },
+        "tags": ["featured", "premium"]
+    }
+    
+    endpoints = [{
+        "method": "GET",
+        "path_pattern": "/users/{id}",
+        "request_schema": None,
+        "response_schema": test_schema
+    }, {
+        "method": "POST",
+        "path_pattern": "/users",
+        "request_schema": {"name": "Jane", "email": "jane@test.com"},
+        "response_schema": test_schema
+    }]
+    
+    # 5a: TypeScript export
+    ts_output = export_all_typescript(endpoints)
+    assert "export interface" in ts_output, "Should contain TypeScript interfaces"
+    assert "GetUsersResponse" in ts_output, f"Should have GET response interface"
+    assert "PostUsersRequest" in ts_output, "Should have POST request interface"
+    assert "name: string" in ts_output, "Should have name field as string"
+    assert "id: number" in ts_output, "Should have id field as number"
+    assert "is_active: boolean" in ts_output, "Should have boolean field"
+    assert "// ISO 8601" in ts_output, "Should annotate datetime strings"
+    assert "// email" in ts_output, "Should annotate email strings"
+    assert "Profile" in ts_output, "Should generate nested sub-interface for profile"
+    print(f"  [PASS] TypeScript: {len(ts_output.splitlines())} lines generated")
+    
+    # 5b: Pydantic export
+    py_output = export_all_pydantic(endpoints)
+    assert "class" in py_output and "BaseModel" in py_output, "Should contain Pydantic models"
+    assert "GetUsersResponse" in py_output, "Should have response model"
+    assert "name: str" in py_output, "Should have str field"
+    assert "id: int" in py_output, "Should have int field"
+    assert "score: float" in py_output, "Should have float field"
+    assert "is_active: bool" in py_output, "Should have bool field"
+    assert "from pydantic import BaseModel" in py_output, "Should have import"
+    print(f"  [PASS] Pydantic: {len(py_output.splitlines())} lines generated")
+    
+    # 5c: JSON Schema export
+    js_output = export_all_json_schema(endpoints)
+    assert "_meta" in js_output, "Should have metadata"
+    assert "endpoints" in js_output, "Should have endpoints dict"
+    ep_key = "GET /users/{id}"
+    assert ep_key in js_output["endpoints"], f"Should have {ep_key} endpoint"
+    resp_schema = js_output["endpoints"][ep_key]["response"]
+    assert resp_schema["properties"]["email"]["format"] == "email", "Should detect email format"
+    assert resp_schema["properties"]["created_at"]["format"] == "date-time", "Should detect datetime format"
+    assert resp_schema["properties"]["id"]["type"] == "integer", "Should have integer type"
+    assert resp_schema["properties"]["score"]["type"] == "number", "Should have number type"
+    assert resp_schema["properties"]["profile"]["type"] == "object", "Should have nested object"
+    print(f"  [PASS] JSON Schema: {len(js_output['endpoints'])} endpoint schemas generated")
+    
+    # 5d: Single schema conversion
+    ts_single = schema_to_typescript(test_schema, "User")
+    assert "export interface User {" in ts_single, "Single conversion should work"
+    assert "UserProfile" in ts_single, "Should generate sub-interface for nested object"
+    print(f"  [PASS] Single-schema TypeScript conversion works")
+    
+    # 5e: Empty schema handling
+    ts_empty = schema_to_typescript({}, "Empty")
+    assert "export interface Empty" in ts_empty, "Should handle empty schema"
+    ts_none = schema_to_typescript(None, "Null")
+    assert "export interface Null" in ts_none, "Should handle None schema"
+    print(f"  [PASS] Edge cases (empty/None) handled gracefully")
+    
+    print("\n[PASS] All type exporter checks passed!")
+
 if __name__ == "__main__":
     test_smart_mock()
     test_narrator()
     test_normalizer()
     test_health_monitor()
+    test_type_exporter()
     print("\n" + "=" * 60)
     print("ALL VERIFICATION TESTS COMPLETE")
     print("=" * 60)
