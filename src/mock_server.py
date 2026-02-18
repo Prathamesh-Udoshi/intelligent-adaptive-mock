@@ -19,7 +19,7 @@ from sqlalchemy import select, update, text
 from models import Base, Endpoint, EndpointBehavior, ChaosConfig, ContractDrift
 from utils.normalization import normalize_path
 from utils.schema_learner import learn_schema, generate_mock_response
-from utils.drift_detector import detect_schema_drift, calculate_drift_score, format_drift_summary
+from utils.drift_detector import detect_schema_drift, calculate_drift_score, format_drift_summary, narrate_drift
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -101,15 +101,24 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        try:
+            self.active_connections.remove(websocket)
+        except ValueError:
+            pass  # Already removed (e.g., double-disconnect)
 
     async def broadcast(self, message: dict):
+        stale_connections = []
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
             except Exception:
-                # Handle stale connections
-                continue
+                stale_connections.append(connection)
+        # Auto-prune stale connections to prevent memory leaks
+        for stale in stale_connections:
+            try:
+                self.active_connections.remove(stale)
+            except ValueError:
+                pass
 
 manager = ConnectionManager()
 
@@ -655,7 +664,11 @@ async def get_explorer_overview(search: Optional[str] = None, limit: int = 10, o
                     "detected_at": unresolved_alerts[0].detected_at.isoformat(),
                     "drift_score": unresolved_alerts[0].drift_score,
                     "drift_summary": unresolved_alerts[0].drift_summary,
-                    "drift_details": unresolved_alerts[0].drift_details
+                    "drift_details": unresolved_alerts[0].drift_details,
+                    "drift_narration": narrate_drift(
+                        unresolved_alerts[0].drift_details if isinstance(unresolved_alerts[0].drift_details, list) else [],
+                        endpoint_path=ep.path_pattern
+                    )
                 } if unresolved_alerts else None,
                 "unresolved_count": len(unresolved_alerts)
             })
@@ -750,7 +763,10 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                 drift_score = calculate_drift_score(drift_issues)
                 drift_summary = format_drift_summary(drift_issues)
                 
+                # AI Narrator: plain-English explanation for console
+                narration = narrate_drift(drift_issues, endpoint_path=normalized)
                 logger.warning(f"🚨 CONTRACT DRIFT DETECTED: {normalized} - {drift_summary}")
+                logger.info(f"📖 AI Narrator Report:\n{narration}")
                 
                 # Store drift alert in background
                 background_tasks.add_task(
