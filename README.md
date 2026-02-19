@@ -219,18 +219,55 @@ The Explorer is designed for deep structural analysis of your API landscape. It 
 
 ## 📂 Project Structure
 
-| File | Role |
-|---|---|
-| `src/mock_server.py` | Core Traffic Controller — routing, proxy, mock generation, WebSocket broadcasting, health monitoring |
-| `src/models.py` | SQLAlchemy models — `Endpoint`, `EndpointBehavior`, `ChaosConfig`, `ContractDrift`, `HealthMetric` |
-| `src/utils/schema_learner.py` | Schema Discovery Brain — recursive JSON analysis + smart mock data generation with 40+ heuristics |
-| `src/utils/normalization.py` | Path Intelligence — 5-pattern regex engine (IDs, UUIDs, hashes, slugs, tokens) |
-| `src/utils/drift_detector.py` | Contract Watchdog — structural drift detection + AI Narrator for plain-English reports |
-| `src/utils/health_monitor.py` | Health Monitor — sliding-window anomaly detection for latency, errors, size, and drift |
-| `src/tests/` | Verification test suites for all core utility modules |
-| `static/index.html` | Control Deck dashboard — Chaos Engine, mode switching, live stream, health banner |
-| `static/explorer.html` | API Explorer — endpoint cards, schemas, drift alerts, health indicators |
-| `static/landing.html` | Landing page — project overview and feature highlights |
+```
+src/
+├── mock_server.py              # App assembly — creates FastAPI app, mounts all routers
+├── core/
+│   ├── database.py             # DB engine, session factory, auto-migrations
+│   ├── models.py               # SQLAlchemy models (Endpoint, EndpointBehavior, ChaosConfig, ContractDrift, HealthMetric)
+│   ├── state.py                # Global state, chaos profiles, learning buffer, locks
+│   └── websocket.py            # WebSocket ConnectionManager for live dashboard
+├── routers/
+│   ├── dashboard.py            # Static pages, config, chaos profiles, learning/mode toggles, WebSocket
+│   ├── endpoints.py            # Endpoint CRUD, stats, chaos config, schema updates, OpenAPI export
+│   ├── drift.py                # Contract drift alerts — list, resolve, per-endpoint stats
+│   ├── health.py               # AI anomaly detection health monitoring endpoints
+│   ├── export.py               # Type export — TypeScript, Pydantic, JSON Schema
+│   └── explorer.py             # Explorer overview with pagination and search
+├── services/
+│   ├── learning.py             # Learning buffer processor, log management, drift/health storage
+│   └── proxy.py                # Catch-all proxy handler + mock response generator
+├── utils/
+│   ├── schema_learner.py       # Schema Discovery Brain — recursive JSON analysis + 40+ mock heuristics
+│   ├── normalization.py        # Path Intelligence — 5-pattern regex engine (IDs, UUIDs, hashes, slugs, tokens)
+│   ├── drift_detector.py       # Contract Watchdog — structural drift detection + AI Narrator reports
+│   ├── health_monitor.py       # Health Monitor — sliding-window anomaly detection
+│   └── type_exporter.py        # Type Exporter — generates TypeScript, Pydantic, and JSON Schema from learned schemas
+├── tests/
+│   ├── test_new_features.py    # Core feature verification (normalization, drift, mock quality, health, types)
+│   ├── test_chaos_profiles.py  # Chaos profile integration tests
+│   └── test_drift_watchdog.py  # Drift detection + resolution integration tests
+└── static/
+    ├── landing.html            # Landing page — project overview and feature highlights
+    ├── index.html              # Control Deck dashboard — Chaos Engine, mode switching, live stream, health banner
+    └── explorer.html           # API Explorer — endpoint cards, schemas, drift alerts, health indicators, type export
+```
+
+---
+
+## 📋 Auto-Generated Client Types
+
+The platform can automatically generate **client-side type definitions** from learned API schemas — no manual typing or OpenAPI specs required.
+
+| Format | Endpoint | Use Case |
+|---|---|---|
+| **TypeScript** | `GET /admin/export-types?format=typescript` | Frontend teams — type-safe API access with IDE autocomplete |
+| **Pydantic** | `GET /admin/export-types?format=pydantic` | Python backends — automatic request/response validation |
+| **JSON Schema** | `GET /admin/export-types?format=jsonschema` | DevOps/CI — Postman, Swagger, API gateway validation |
+
+Access via the **Type Export panel** on the Explorer page, or call the API directly.
+
+---
 
 ## 💡 Pro-Tip
 Run a different `DB_NAME` for every project. This lets you build "Behavioral Profiles" for different microservices and switch between them instantly.

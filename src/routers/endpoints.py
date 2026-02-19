@@ -1,0 +1,150 @@
+"""
+Endpoints Router
+=================
+CRUD and management for learned endpoints: list, stats, chaos config, schema updates.
+"""
+
+import re
+from typing import Dict, Any
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
+from sqlalchemy import select, update
+
+from core.database import AsyncSessionLocal
+from core.models import Endpoint, EndpointBehavior, ChaosConfig
+
+router = APIRouter()
+
+
+@router.get("/admin/endpoints")
+async def list_endpoints():
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(Endpoint))
+        endpoints = res.scalars().all()
+        return endpoints
+
+
+@router.get("/admin/endpoints/{endpoint_id}/stats")
+async def get_endpoint_stats(endpoint_id: int):
+    async with AsyncSessionLocal() as session:
+        b_res = await session.execute(select(EndpointBehavior).where(EndpointBehavior.endpoint_id == endpoint_id))
+        behavior = b_res.scalars().first()
+        c_res = await session.execute(select(ChaosConfig).where(ChaosConfig.endpoint_id == endpoint_id))
+        chaos = c_res.scalars().first()
+
+        if not behavior:
+            raise HTTPException(status_code=404, detail="Endpoint not found")
+
+        return {
+            "behavior": {
+                "latency_mean": behavior.latency_mean,
+                "error_rate": behavior.error_rate,
+                "status_codes": behavior.status_code_distribution,
+                "schema_preview": behavior.response_schema,
+                "request_schema": behavior.request_schema
+            },
+            "chaos": {
+                "level": chaos.chaos_level,
+                "active": chaos.is_active
+            }
+        }
+
+
+@router.post("/admin/endpoints/{endpoint_id}/chaos")
+async def configure_chaos(endpoint_id: int, config: Dict[str, Any]):
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            update(ChaosConfig)
+            .where(ChaosConfig.endpoint_id == endpoint_id)
+            .values(
+                chaos_level=config.get("level", 0),
+                is_active=config.get("active", False)
+            )
+        )
+        await session.commit()
+        return {"status": "updated"}
+
+
+@router.post("/admin/endpoints/{endpoint_id}/schema")
+async def update_endpoint_schema(endpoint_id: int, data: Dict[str, Any]):
+    schema = data.get("schema")
+    schema_type = data.get("type", "outbound")  # 'inbound' or 'outbound'
+
+    async with AsyncSessionLocal() as session:
+        update_vals = {}
+        if schema_type == "inbound":
+            update_vals["request_schema"] = schema
+        else:
+            update_vals["response_schema"] = schema
+
+        await session.execute(
+            update(EndpointBehavior)
+            .where(EndpointBehavior.endpoint_id == endpoint_id)
+            .values(**update_vals)
+        )
+        await session.commit()
+        return {"status": "schema_updated", "type": schema_type}
+
+
+@router.get("/admin/export-openapi")
+async def export_openapi():
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(Endpoint))
+        endpoints = res.scalars().all()
+
+        paths = {}
+        for ep in endpoints:
+            b_res = await session.execute(select(EndpointBehavior).where(EndpointBehavior.endpoint_id == ep.id))
+            behavior = b_res.scalars().first()
+
+            p = ep.path_pattern
+            m = ep.method.lower()
+
+            if p not in paths: paths[p] = {}
+
+            # Extract Path Parameters from {id}, {name}, etc.
+            path_params = re.findall(r'\{(.*?)\}', p)
+            parameters = []
+            for param in path_params:
+                parameters.append({
+                    "name": param,
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string"}
+                })
+
+            paths[p][m] = {
+                "summary": f"Inferred {ep.method} for {p}",
+                "parameters": parameters,
+                "responses": {
+                    "200": {
+                        "description": "Learned Success Response",
+                        "content": {
+                            "application/json": {
+                                "example": behavior.response_schema
+                            }
+                        }
+                    }
+                }
+            }
+
+            if behavior.request_schema and m in ['post', 'put', 'patch', 'delete']:
+                paths[p][m]["requestBody"] = {
+                    "content": {
+                        "application/json": {
+                            "example": behavior.request_schema
+                        }
+                    }
+                }
+
+        return {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "AI Learned API Contract",
+                "version": "1.0.0",
+                "description": "This contract was automatically generated by observing real production traffic."
+            },
+            "servers": [{"url": "/", "description": "Local Mock Platform"}],
+            "paths": paths
+        }
