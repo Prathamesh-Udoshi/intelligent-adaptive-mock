@@ -326,6 +326,49 @@
             </div>
         </div>
 
+        <!-- Type Export Panel -->
+        <div id="typeExportPanel"
+            style="margin-bottom: 20px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); background: rgba(0,0,0,0.3); overflow: hidden; transition: all 0.3s ease;">
+            <button
+                onclick="document.getElementById('exportBody').classList.toggle('hidden'); this.querySelector('.arrow').textContent = document.getElementById('exportBody').classList.contains('hidden') ? '▸' : '▾';"
+                style="width: 100%; background: none; border: none; padding: 12px 20px; cursor: pointer; display: flex; align-items: center; gap: 10px; color: #aaa; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; text-align: left;">
+                <span style="font-size: 14px;">📋</span>
+                Export Client Types
+                <span style="font-size: 10px; color: #555; font-weight: 600; margin-left: 4px;">(TypeScript · Pydantic ·
+                    JSON Schema)</span>
+                <span class="arrow" style="margin-left: auto; font-size: 12px; color: #555;">▸</span>
+            </button>
+            <div id="exportBody" class="hidden" style="padding: 0 20px 18px 20px;">
+                <!-- Format selector + actions -->
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;">
+                    <div
+                        style="display: flex; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08);">
+                        <button onclick="exportTypes('typescript')" id="btnTs"
+                            style="padding: 8px 16px; font-size: 11px; font-weight: 800; border: none; cursor: pointer; background: var(--accent); color: #000; transition: all 0.2s ease;">TypeScript</button>
+                        <button onclick="exportTypes('pydantic')" id="btnPy"
+                            style="padding: 8px 16px; font-size: 11px; font-weight: 800; border: none; cursor: pointer; background: rgba(255,255,255,0.05); color: #888; transition: all 0.2s ease;">Pydantic</button>
+                        <button onclick="exportTypes('jsonschema')" id="btnJs"
+                            style="padding: 8px 16px; font-size: 11px; font-weight: 800; border: none; cursor: pointer; background: rgba(255,255,255,0.05); color: #888; transition: all 0.2s ease;">JSON
+                            Schema</button>
+                    </div>
+                    <div style="margin-left: auto; display: flex; gap: 8px;">
+                        <button onclick="copyExport()"
+                            style="padding: 8px 14px; font-size: 10px; font-weight: 800; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; cursor: pointer; background: rgba(255,255,255,0.03); color: #aaa; transition: all 0.2s ease;"
+                            id="copyBtn">📋 COPY</button>
+                        <button onclick="downloadExport()"
+                            style="padding: 8px 14px; font-size: 10px; font-weight: 800; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; cursor: pointer; background: rgba(255,255,255,0.03); color: #aaa; transition: all 0.2s ease;">💾
+                            DOWNLOAD</button>
+                    </div>
+                </div>
+                <!-- Code viewer -->
+                <div style="position: relative;">
+                    <pre id="exportOutput"
+                        style="background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 16px 20px; font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; font-size: 12px; color: #c8d6e5; line-height: 1.6; max-height: 400px; overflow-y: auto; white-space: pre; tab-size: 2; margin: 0;">Click a format above to generate type definitions from your learned API schemas.</pre>
+                </div>
+                <div id="exportStatus" style="margin-top: 8px; font-size: 10px; color: #555; text-align: right;"></div>
+            </div>
+        </div>
+
         <div id="explorer-root">
             <p style="text-align: center; color: var(--text-dim);">Analyzing patterns...</p>
         </div>
@@ -557,6 +600,82 @@
         // Initial load
         loadEndpoints();
         toggleAutoRefresh(true);
+
+        // ── Type Export Functions ──
+
+        let currentExportContent = '';
+        let currentExportFormat = 'typescript';
+
+        function updateFormatButtons(active) {
+            const inactive = 'padding: 8px 16px; font-size: 11px; font-weight: 800; border: none; cursor: pointer; background: rgba(255,255,255,0.05); color: #888; transition: all 0.2s ease;';
+            const activeStyle = 'padding: 8px 16px; font-size: 11px; font-weight: 800; border: none; cursor: pointer; background: var(--accent); color: #000; transition: all 0.2s ease;';
+            document.getElementById('btnTs').style.cssText = active === 'typescript' ? activeStyle : inactive;
+            document.getElementById('btnPy').style.cssText = active === 'pydantic' ? activeStyle : inactive;
+            document.getElementById('btnJs').style.cssText = active === 'jsonschema' ? activeStyle : inactive;
+        }
+
+        async function exportTypes(format) {
+            currentExportFormat = format;
+            updateFormatButtons(format);
+            const output = document.getElementById('exportOutput');
+            const status = document.getElementById('exportStatus');
+            output.textContent = 'Generating...';
+            status.textContent = '';
+
+            try {
+                const resp = await fetch(`/admin/export-types?format=${format}`);
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    output.textContent = `⚠️ ${err.detail || 'Export failed'}`;
+                    output.style.color = '#f0ad4e';
+                    return;
+                }
+
+                if (format === 'jsonschema') {
+                    const data = await resp.json();
+                    currentExportContent = JSON.stringify(data, null, 2);
+                } else {
+                    currentExportContent = await resp.text();
+                }
+
+                output.textContent = currentExportContent;
+                output.style.color = '#c8d6e5';
+
+                // Count and display stats
+                const lines = currentExportContent.split('\n').length;
+                const ext = format === 'typescript' ? '.ts' : format === 'pydantic' ? '.py' : '.json';
+                status.textContent = `✅ Generated ${lines} lines • ${ext} format`;
+                status.style.color = '#5cb85c';
+            } catch (e) {
+                output.textContent = `❌ Error: ${e.message}`;
+                output.style.color = '#ff4757';
+            }
+        }
+
+        function copyExport() {
+            if (!currentExportContent) return;
+            navigator.clipboard.writeText(currentExportContent).then(() => {
+                const btn = document.getElementById('copyBtn');
+                const orig = btn.textContent;
+                btn.textContent = '✅ COPIED!';
+                btn.style.color = '#5cb85c';
+                btn.style.borderColor = '#5cb85c44';
+                setTimeout(() => { btn.textContent = orig; btn.style.color = '#aaa'; btn.style.borderColor = 'rgba(255,255,255,0.08)'; }, 2000);
+            });
+        }
+
+        function downloadExport() {
+            if (!currentExportContent) return;
+            const ext = currentExportFormat === 'typescript' ? 'ts' : currentExportFormat === 'pydantic' ? 'py' : 'json';
+            const filename = `api-types.${ext}`;
+            const blob = new Blob([currentExportContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
     </script>
 </body>
 
