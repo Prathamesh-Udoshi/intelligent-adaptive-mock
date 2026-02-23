@@ -20,7 +20,7 @@ from core.database import AsyncSessionLocal
 import core.state as state
 from core.state import (
     PLATFORM_STATE, CHAOS_PROFILES, LEARNING_BUFFER,
-    buffer_lock, health_monitor
+    buffer_lock, health_monitor, adaptive_detector
 )
 from core.models import EndpointBehavior, ChaosConfig, ContractDrift
 from services.learning import (
@@ -133,8 +133,11 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                     drift_issues
                 )
 
-        # HEALTH MONITORING (AI Anomaly Detection)
+        # HEALTH MONITORING (Adaptive Anomaly Detection)
         response_size = len(proxy_resp.content) if proxy_resp.content else 0
+
+        # Feed this latency into the Welford detector — updates per-endpoint baseline
+        adaptive_detector.update(normalized, latency_ms)
 
         has_active_drift_for_health = has_drift_detected
         if not has_active_drift_for_health and behavior:
@@ -151,11 +154,10 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
             latency_ms=latency_ms,
             status_code=proxy_resp.status_code,
             response_size=response_size,
-            learned_latency_mean=behavior.latency_mean if behavior else 0,
-            learned_latency_std=behavior.latency_std if behavior else 0,
+            path_pattern=normalized,
             learned_error_rate=behavior.error_rate if behavior else 0,
             has_active_drift=has_active_drift_for_health,
-            path_pattern=normalized
+            detector=adaptive_detector,         # ← Welford-based latency detector
         )
 
         # Log anomalies to console

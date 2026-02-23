@@ -56,6 +56,13 @@ async def startup():
     asyncio.create_task(learning_loop())
     logger.info("🧠 Learning engine started (Processing every 5s)")
 
+# ── Shutdown ──
+@app.on_event("shutdown")
+async def shutdown():
+    from core.state import adaptive_detector
+    adaptive_detector.flush()
+    logger.info("💾 Adaptive detector baselines persisted on shutdown.")
+
 # ── Mount Routers ──
 # ORDER MATTERS: Specific routes MUST come before the catch-all proxy.
 app.include_router(dashboard.router)     # /, /admin/dashboard, /admin/config, /ws, etc.

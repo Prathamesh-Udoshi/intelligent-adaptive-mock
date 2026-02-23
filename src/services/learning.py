@@ -158,7 +158,7 @@ async def process_learning_buffer():
         if len(state.LEARNING_BUFFER) < LEARNING_BUFFER_SIZE:
             return
         batch = state.LEARNING_BUFFER[:]
-        state.LEARNING_BUFFER = []
+        state.LEARNING_BUFFER.clear()  # MUST use .clear(), not = [] (would break proxy.py's reference)
 
     # Process each item in its OWN session to avoid cross-contamination
     for item in batch:

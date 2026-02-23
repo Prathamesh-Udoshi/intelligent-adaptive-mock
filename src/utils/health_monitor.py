@@ -3,10 +3,12 @@ AI Anomaly Detection — Traffic Health Monitor
 ===============================================
 Evaluates each proxied request against learned baselines to detect behavioral anomalies.
 
+Latency anomaly detection is delegated to AdaptiveAnomalyDetector (Welford's algorithm).
+This class retains the sliding window for error rate spikes and response size drift.
+
 Monitors:
-  1. Latency Anomaly    — Current latency > 2σ from learned mean
+  1. Latency Anomaly    — Welford Z-score against per-endpoint self-learned baseline
   2. Error Rate Spike   — Error rate jumps >3x from baseline in sliding window
-  3. Traffic Drop        — Sudden traffic drop (possible silent failures)
   4. Response Size Drift — Body size changes dramatically (possible data truncation)
 
 Outputs a per-endpoint health score (0-100, where 100 = healthy) and
@@ -67,15 +69,20 @@ class HealthMonitor:
         latency_ms: float,
         status_code: int,
         response_size: int,
-        learned_latency_mean: float = 0.0,
-        learned_latency_std: float = 0.0,
+        path_pattern: str = "",
         learned_error_rate: float = 0.0,
         has_active_drift: bool = False,
-        path_pattern: str = ""
+        detector=None,             # AdaptiveAnomalyDetector instance (handles latency)
+        # Legacy params kept for backward compatibility but no longer used:
+        learned_latency_mean: float = 0.0,
+        learned_latency_std: float = 0.0,
     ) -> Dict[str, Any]:
         """
         Evaluate a single request against learned baselines.
-        
+
+        Latency anomaly detection is fully delegated to AdaptiveAnomalyDetector.
+        Error rate and response size anomalies are computed from sliding windows here.
+
         Returns a health assessment dict:
         {
             "health_score": 0-100,
@@ -112,24 +119,25 @@ class HealthMonitor:
         latency_anomaly = False
         error_spike = False
         size_anomaly = False
-        
-        # --- 1. LATENCY ANOMALY ---
-        if learned_latency_mean > 0 and learned_latency_std > 0:
-            threshold = learned_latency_mean + (self.LATENCY_SIGMA_THRESHOLD * learned_latency_std)
-            if latency_ms > threshold:
-                latency_anomaly = True
-                overshoot = ((latency_ms - learned_latency_mean) / learned_latency_std)
+
+        # --- 1. LATENCY ANOMALY (fully delegated to AdaptiveAnomalyDetector) ---
+        if detector is not None and path_pattern:
+            latency_detail = detector.get_anomaly_detail(path_pattern, latency_ms)
+            latency_anomaly = latency_detail["is_anomaly"]
+            if latency_anomaly:
+                severity_icon = "high" if latency_detail["z_score"] > 6.0 else "medium"
                 anomalies.append({
                     "type": "latency_spike",
-                    "severity": "high" if overshoot > 4 else "medium",
-                    "message": f"Latency {latency_ms:.0f}ms is {overshoot:.1f}σ above the baseline mean of {learned_latency_mean:.0f}ms",
+                    "severity": severity_icon,
+                    "message": latency_detail["message"],
                     "current": round(latency_ms, 1),
-                    "baseline": round(learned_latency_mean, 1),
-                    "threshold": round(threshold, 1)
+                    "baseline": latency_detail["mean"],
+                    "z_score": latency_detail["z_score"],
+                    "threshold": round(latency_detail["mean"] + 3.0 * latency_detail["std"], 1)
                 })
+        # Fallback: if no detector provided, use legacy window-based detection
         elif len(window) >= self.MIN_OBSERVATIONS:
-            # No learned baseline yet — use window statistics
-            latencies = [o["latency_ms"] for o in window[:-1]]  # Exclude current
+            latencies = [o["latency_ms"] for o in window[:-1]]
             if latencies:
                 win_mean = sum(latencies) / len(latencies)
                 win_std = _std_dev(latencies, win_mean)
@@ -138,7 +146,6 @@ class HealthMonitor:
                     if latency_ms > threshold:
                         latency_anomaly = True
                         overshoot = (latency_ms - win_mean) / win_std
-                        # Don't flag as 'high' severity during initial window learning
                         anomalies.append({
                             "type": "latency_spike",
                             "severity": "medium",
@@ -147,12 +154,7 @@ class HealthMonitor:
                             "baseline": round(win_mean, 1),
                             "threshold": round(threshold, 1)
                         })
-        
-        # --- Increase Penalty Reliability: Ignore high severity for first few requests ---
-        if len(window) < 10:
-            for a in anomalies:
-                if a["type"] == "latency_spike":
-                    a["severity"] = "medium"
+
         
         # --- 2. ERROR RATE SPIKE ---
         if len(window) >= self.MIN_OBSERVATIONS:

@@ -10,6 +10,7 @@ import asyncio
 from typing import List, Dict
 
 from utils.health_monitor import HealthMonitor
+from utils.adaptive_detector import AdaptiveAnomalyDetector
 
 # ── Target URL ──
 TARGET_URL = os.environ.get("TARGET_URL", "http://httpbin.org")
@@ -61,5 +62,11 @@ buffer_lock = asyncio.Lock()
 RECENT_LOGS: List[Dict] = []
 logs_lock = asyncio.Lock()
 
-# ── Health Monitor (AI Anomaly Detection) ──
+# ── Health Monitor (sliding window: error rate + response size anomalies) ──
 health_monitor = HealthMonitor()
+
+# ── Adaptive Anomaly Detector (Welford's algorithm: per-endpoint latency baselines) ──
+# This is the source of truth for latency anomaly detection.
+# No hardcoded baselines — everything is learned from real traffic.
+adaptive_detector = AdaptiveAnomalyDetector()
+
