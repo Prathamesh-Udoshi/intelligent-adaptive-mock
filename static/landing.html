@@ -279,9 +279,9 @@
         <div class="logo">EVOLUTIONARY MOCK</div>
         <div class="nav-links">
             <a href="#features" class="nav-link">Features</a>
+            <a href="#setup" class="nav-link">Setup</a>
             <a href="/admin/dashboard" class="nav-link">Console</a>
             <a href="/admin/explorer" class="nav-link">Explorer</a>
-            <a href="/admin/docs" class="nav-link">Docs</a>
         </div>
     </nav>
 
@@ -363,11 +363,298 @@
                 </div>
             </div>
         </section>
+
+        <!-- Quick Start Section -->
+        <section id="setup" class="section">
+            <div style="text-align: center; margin-bottom: 60px;">
+                <h2 style="font-size: 42px; font-weight: 800; margin-bottom: 10px;">Get Started in 30 Seconds</h2>
+                <p style="color: var(--text-dim);">Point the platform at your API, send traffic, and watch it learn.</p>
+            </div>
+
+            <!-- Setup Card -->
+            <div
+                style="max-width: 700px; margin: 0 auto 60px auto; background: var(--panel); border-radius: 24px; border: 1px solid rgba(255,255,255,0.08); padding: 40px;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 24px;">
+                    <span style="font-size: 24px;">🎯</span>
+                    <h3 style="margin: 0; font-size: 20px;">Connect Your API</h3>
+                </div>
+                <p style="color: var(--text-dim); font-size: 14px; margin-bottom: 20px;">
+                    Enter the base URL of the backend API you want to observe and learn from. The platform will proxy
+                    all traffic to this URL.
+                </p>
+                <div style="display: flex; gap: 12px;">
+                    <input type="text" id="targetUrlInput" placeholder="https://api.example.com"
+                        style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); padding: 14px 18px; border-radius: 12px; color: white; font-size: 15px; font-family: 'JetBrains Mono', monospace; outline: none; transition: 0.3s;">
+                    <button onclick="connectApi()" id="connectBtn"
+                        style="background: var(--accent); color: #000; border: none; padding: 14px 28px; border-radius: 12px; font-weight: 800; font-size: 14px; cursor: pointer; transition: all 0.3s ease; white-space: nowrap;">
+                        CONNECT
+                    </button>
+                </div>
+                <div id="connectStatus" style="margin-top: 14px; font-size: 13px; min-height: 20px;"></div>
+                <p style="color: var(--text-dim); font-size: 12px; margin-top: 16px; opacity: 0.6;">
+                    💡 Default: <code
+                        style="color: var(--accent); background: rgba(164,142,255,0.1); padding: 2px 6px; border-radius: 4px;">httpbin.org</code>
+                    — a free test API. Try it out before connecting your own.
+                </p>
+            </div>
+
+            <!-- Your Proxy URL -->
+            <div
+                style="max-width: 700px; margin: 0 auto 30px auto; background: var(--panel); border-radius: 24px; border: 1px solid rgba(255,255,255,0.08); padding: 40px;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                    <span style="font-size: 24px;">🔗</span>
+                    <h3 style="margin: 0; font-size: 20px;">Your Proxy URL</h3>
+                </div>
+                <p style="color: var(--text-dim); font-size: 14px; margin-bottom: 16px;">
+                    Replace your backend URL with this in your frontend code. All requests will flow through the
+                    platform.
+                </p>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <code id="proxyUrl"
+                        style="flex: 1; background: rgba(0,0,0,0.3); padding: 14px 18px; border-radius: 12px; font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #5cb85c; border: 1px solid rgba(92,184,92,0.2);"></code>
+                    <button onclick="copyProxyUrl()" id="copyBtn"
+                        style="background: rgba(255,255,255,0.05); color: white; border: 1px solid rgba(255,255,255,0.12); padding: 14px 20px; border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer; transition: 0.3s; white-space: nowrap;">📋
+                        Copy</button>
+                </div>
+            </div>
+
+            <!-- Manual Endpoint Definition -->
+            <div
+                style="max-width: 700px; margin: 0 auto 60px auto; background: var(--panel); border-radius: 24px; border: 1px solid rgba(255,255,255,0.08); padding: 40px;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                    <span style="font-size: 24px;">✏️</span>
+                    <h3 style="margin: 0; font-size: 20px;">Define Endpoints Manually</h3>
+                    <span
+                        style="background: rgba(0,210,255,0.1); color: #00d2ff; padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; border: 1px solid rgba(0,210,255,0.2);">OPTIONAL</span>
+                </div>
+                <p style="color: var(--text-dim); font-size: 14px; margin-bottom: 20px;">
+                    Backend not ready yet? Define your endpoints and their expected response shape here. The platform
+                    will immediately start serving mocks for these.
+                </p>
+
+                <div style="display: flex; gap: 12px; margin-bottom: 14px;">
+                    <select id="manualMethod"
+                        style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); padding: 12px 14px; border-radius: 10px; color: white; font-size: 14px; font-family: 'JetBrains Mono', monospace; outline: none; min-width: 100px;">
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="PATCH">PATCH</option>
+                        <option value="DELETE">DELETE</option>
+                    </select>
+                    <input type="text" id="manualPath" placeholder="/users/{id}/profile"
+                        style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); padding: 12px 14px; border-radius: 10px; color: white; font-size: 14px; font-family: 'JetBrains Mono', monospace; outline: none;">
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label style="color: var(--text-dim); font-size: 12px; display: block; margin-bottom: 6px;">Sample
+                        JSON Response — paste what the endpoint <em>should</em> return:</label>
+                    <textarea id="manualResponse" rows="6" placeholder='{
+  "id": 1,
+  "name": "John Doe",
+  "email": "john@example.com",
+  "role": "admin"
+}' style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); padding: 14px; border-radius: 10px; color: #5cb85c; font-size: 13px; font-family: 'JetBrains Mono', monospace; outline: none; resize: vertical; box-sizing: border-box;"></textarea>
+                </div>
+
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <button onclick="defineEndpoint()" id="defineBtn"
+                        style="background: rgba(0,210,255,0.15); color: #00d2ff; border: 1px solid rgba(0,210,255,0.3); padding: 12px 24px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; transition: 0.3s;">+
+                        Add Endpoint</button>
+                    <div id="defineStatus" style="font-size: 13px; flex: 1;"></div>
+                </div>
+
+                <div id="definedList" style="margin-top: 20px;"></div>
+            </div>
+
+            <!-- How It Works Steps -->
+            <div class="grid" style="grid-template-columns: repeat(3, 1fr);">
+                <div style="text-align: center; padding: 30px;">
+                    <div
+                        style="width: 64px; height: 64px; border-radius: 50%; background: rgba(164,142,255,0.1); border: 2px solid rgba(164,142,255,0.3); display: flex; align-items: center; justify-content: center; margin: 0 auto 20px auto; font-size: 28px; font-weight: 800; color: var(--accent);">
+                        1</div>
+                    <h3 style="margin-bottom: 10px;">Proxy Mode</h3>
+                    <p style="color: var(--text-dim); font-size: 14px;">Point your frontend at this server instead of
+                        the real API. All traffic flows through and gets observed.</p>
+                    <div
+                        style="margin-top: 16px; background: rgba(0,0,0,0.3); border-radius: 10px; padding: 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); text-align: left;">
+                        <span style="color: #666;">// Before:</span><br>
+                        <span
+                            style="color: #ff6b6b; text-decoration: line-through;">fetch("https://api.example.com/users")</span><br><br>
+                        <span style="color: #666;">// After:</span><br>
+                        <span style="color: #5cb85c;">fetch("<span id="proxyExample"
+                                class="proxy-url-ref"></span>/users")</span>
+                    </div>
+                </div>
+                <div style="text-align: center; padding: 30px;">
+                    <div
+                        style="width: 64px; height: 64px; border-radius: 50%; background: rgba(164,142,255,0.1); border: 2px solid rgba(164,142,255,0.3); display: flex; align-items: center; justify-content: center; margin: 0 auto 20px auto; font-size: 28px; font-weight: 800; color: var(--accent);">
+                        2</div>
+                    <h3 style="margin-bottom: 10px;">Watch It Learn</h3>
+                    <p style="color: var(--text-dim); font-size: 14px;">Open the <strong style="color: white;">Control
+                            Deck</strong> to see requests flowing in real-time. The platform builds schemas, latency
+                        models, and status distributions.</p>
+                    <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+                        <span
+                            style="background: rgba(92,184,92,0.1); color: #5cb85c; padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid rgba(92,184,92,0.2);">🟢
+                            GET /users</span>
+                        <span
+                            style="background: rgba(0,210,255,0.1); color: #00d2ff; padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid rgba(0,210,255,0.2);">🔵
+                            POST /orders</span>
+                        <span
+                            style="background: rgba(164,142,255,0.1); color: var(--accent); padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid rgba(164,142,255,0.2);">🧠
+                            Learning...</span>
+                    </div>
+                </div>
+                <div style="text-align: center; padding: 30px;">
+                    <div
+                        style="width: 64px; height: 64px; border-radius: 50%; background: rgba(164,142,255,0.1); border: 2px solid rgba(164,142,255,0.3); display: flex; align-items: center; justify-content: center; margin: 0 auto 20px auto; font-size: 28px; font-weight: 800; color: var(--accent);">
+                        3</div>
+                    <h3 style="margin-bottom: 10px;">Mock Mode</h3>
+                    <p style="color: var(--text-dim); font-size: 14px;">Switch to mock mode from the dashboard. The
+                        platform serves AI-generated responses — even if the real API is completely offline.</p>
+                    <div
+                        style="margin-top: 16px; display: flex; flex-direction: column; gap: 6px; align-items: center;">
+                        <span
+                            style="background: rgba(164,142,255,0.08); color: var(--accent); padding: 8px 20px; border-radius: 8px; font-size: 12px; font-weight: 700; border: 1px solid rgba(164,142,255,0.15);">📋
+                            Export TypeScript Types</span>
+                        <span
+                            style="background: rgba(255,71,87,0.08); color: #ff4757; padding: 8px 20px; border-radius: 8px; font-size: 12px; font-weight: 700; border: 1px solid rgba(255,71,87,0.15);">🚨
+                            Drift Alerts</span>
+                        <span
+                            style="background: rgba(92,184,92,0.08); color: #5cb85c; padding: 8px 20px; border-radius: 8px; font-size: 12px; font-weight: 700; border: 1px solid rgba(92,184,92,0.15);">🩺
+                            Health Score: 97</span>
+                    </div>
+                </div>
+            </div>
+        </section>
     </main>
 
     <footer>
         <p>&copy; 2026 Evolutionary Mock Suite. Designed for high-fidelity frontend development.</p>
     </footer>
+
+    <script>
+        async function connectApi() {
+            const input = document.getElementById('targetUrlInput');
+            const btn = document.getElementById('connectBtn');
+            const status = document.getElementById('connectStatus');
+            const url = input.value.trim();
+
+            if (!url) {
+                status.innerHTML = '<span style="color: #ff4757;">⚠️ Please enter a URL</span>';
+                return;
+            }
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                status.innerHTML = '<span style="color: #ff4757;">⚠️ URL must start with http:// or https://</span>';
+                return;
+            }
+
+            btn.textContent = 'CONNECTING...';
+            btn.style.opacity = '0.6';
+
+            try {
+                const res = await fetch('/admin/target', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target_url: url })
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    status.innerHTML = `<span style="color: #5cb85c;">✅ Connected to <strong>${data.target_url}</strong></span>`;
+                    btn.textContent = '✓ CONNECTED';
+                    btn.style.background = '#5cb85c';
+                    setTimeout(() => {
+                        btn.textContent = 'CONNECT';
+                        btn.style.background = 'var(--accent)';
+                        btn.style.opacity = '1';
+                    }, 3000);
+                } else {
+                    status.innerHTML = `<span style="color: #ff4757;">❌ ${data.detail || 'Failed to connect'}</span>`;
+                    btn.textContent = 'CONNECT';
+                    btn.style.opacity = '1';
+                }
+            } catch (e) {
+                status.innerHTML = '<span style="color: #ff4757;">❌ Server unreachable</span>';
+                btn.textContent = 'CONNECT';
+                btn.style.opacity = '1';
+            }
+        }
+
+        // Proxy URL copy helper
+        function copyProxyUrl() {
+            navigator.clipboard.writeText(window.location.origin).then(() => {
+                const btn = document.getElementById('copyBtn');
+                btn.textContent = '✓ Copied!';
+                btn.style.borderColor = 'rgba(92,184,92,0.5)';
+                btn.style.color = '#5cb85c';
+                setTimeout(() => { btn.textContent = '📋 Copy'; btn.style.borderColor = ''; btn.style.color = 'white'; }, 2000);
+            });
+        }
+
+        // Manual endpoint definition
+        async function defineEndpoint() {
+            const method = document.getElementById('manualMethod').value;
+            const path = document.getElementById('manualPath').value.trim();
+            const responseText = document.getElementById('manualResponse').value.trim();
+            const status = document.getElementById('defineStatus');
+
+            if (!path) { status.innerHTML = '<span style="color:#ff4757">⚠️ Path is required</span>'; return; }
+
+            let response_body = null;
+            if (responseText) {
+                try { response_body = JSON.parse(responseText); }
+                catch (e) { status.innerHTML = '<span style="color:#ff4757">⚠️ Invalid JSON</span>'; return; }
+            }
+
+            const btn = document.getElementById('defineBtn');
+            btn.textContent = 'Adding...';
+            btn.style.opacity = '0.6';
+
+            try {
+                const res = await fetch('/admin/endpoints/manual', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ method, path, response_body, status_code: 200 })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    status.innerHTML = `<span style="color:#5cb85c">✅ ${data.status}: ${data.method} ${data.path}</span>`;
+                    // Add to defined list
+                    const list = document.getElementById('definedList');
+                    const tag = document.createElement('span');
+                    tag.style.cssText = 'display:inline-block; margin: 4px 6px 4px 0; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; font-family: JetBrains Mono, monospace; background: rgba(92,184,92,0.08); color: #5cb85c; border: 1px solid rgba(92,184,92,0.15);';
+                    tag.textContent = `${data.method} ${data.path}`;
+                    list.appendChild(tag);
+                    // Clear inputs
+                    document.getElementById('manualPath').value = '';
+                    document.getElementById('manualResponse').value = '';
+                } else {
+                    status.innerHTML = `<span style="color:#ff4757">❌ ${data.detail || 'Error'}</span>`;
+                }
+            } catch (e) {
+                status.innerHTML = '<span style="color:#ff4757">❌ Server unreachable</span>';
+            }
+            btn.textContent = '+ Add Endpoint';
+            btn.style.opacity = '1';
+        }
+
+        // Init: load config + set proxy URLs
+        (async () => {
+            // Set proxy URL displays
+            const origin = window.location.origin;
+            document.getElementById('proxyUrl').textContent = origin;
+            document.querySelectorAll('.proxy-url-ref').forEach(el => el.textContent = origin);
+
+            try {
+                const res = await fetch('/admin/config');
+                const data = await res.json();
+                if (data.target_url) {
+                    document.getElementById('targetUrlInput').placeholder = data.target_url;
+                }
+            } catch (e) { /* ignore */ }
+        })();
+    </script>
 </body>
 
 </html>

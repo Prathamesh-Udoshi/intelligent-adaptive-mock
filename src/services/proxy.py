@@ -17,9 +17,10 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from core.database import AsyncSessionLocal
+import core.state as state
 from core.state import (
     PLATFORM_STATE, CHAOS_PROFILES, LEARNING_BUFFER,
-    TARGET_URL, buffer_lock, health_monitor
+    buffer_lock, health_monitor
 )
 from core.models import EndpointBehavior, ChaosConfig, ContractDrift
 from services.learning import (
@@ -67,7 +68,7 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
         return await generate_endpoint_mock(behavior, chaos, normalized, request)
 
     # 2. PROXY MODE (With Automatic Mock Fallback)
-    target_full_url = f"{TARGET_URL}/{path}"
+    target_full_url = f"{state.TARGET_URL}/{path}"
     start_time = time.time()
 
     # Pre-read request body for learning
@@ -179,7 +180,7 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
         )
     except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as e:
         # AUTOMATIC FAILOVER: Backend is down, serve a mock instead!
-        logger.warning(f"⚠️ PROXY FAILOVER: Backend {TARGET_URL} unreachable. Error: {str(e)}")
+        logger.warning(f"⚠️ PROXY FAILOVER: Backend {state.TARGET_URL} unreachable. Error: {str(e)}")
         return await generate_endpoint_mock(behavior, chaos, normalized, request, is_failover=True)
     except Exception as e:
         logger.error(f"💥 UNEXPECTED PROXY ERROR: {str(e)}")

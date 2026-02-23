@@ -12,7 +12,8 @@ from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy import update
 
 from core.database import AsyncSessionLocal
-from core.state import PLATFORM_STATE, CHAOS_PROFILES, RECENT_LOGS, TARGET_URL, logs_lock
+import core.state as state
+from core.state import PLATFORM_STATE, CHAOS_PROFILES, RECENT_LOGS, logs_lock
 from core.websocket import manager
 from core.models import ChaosConfig
 
@@ -65,9 +66,21 @@ async def get_config():
         "chaos_level": 0,
         "learning_mode": PLATFORM_STATE["learning_enabled"],
         "platform_mode": PLATFORM_STATE["mode"],
-        "target_url": TARGET_URL,
+        "target_url": state.TARGET_URL,
         "active_chaos_profile": PLATFORM_STATE["active_chaos_profile"]
     }
+
+
+@router.post("/admin/target")
+async def set_target_url(request: Request):
+    """Change the proxy target URL at runtime."""
+    data = await request.json()
+    new_url = data.get("target_url", "").strip().rstrip("/")
+    if not new_url or not new_url.startswith(("http://", "https://")):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Invalid URL. Must start with http:// or https://")
+    state.TARGET_URL = new_url
+    return {"status": "success", "target_url": state.TARGET_URL}
 
 
 @router.get("/admin/chaos/profiles")

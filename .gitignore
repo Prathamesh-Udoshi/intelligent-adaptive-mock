@@ -5,3 +5,4 @@ data/*.json
 .venv
 *.db
 docs/
+DEPLOYMENT.md
