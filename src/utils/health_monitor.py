@@ -138,6 +138,7 @@ class HealthMonitor:
                     if latency_ms > threshold:
                         latency_anomaly = True
                         overshoot = (latency_ms - win_mean) / win_std
+                        # Don't flag as 'high' severity during initial window learning
                         anomalies.append({
                             "type": "latency_spike",
                             "severity": "medium",
@@ -146,6 +147,12 @@ class HealthMonitor:
                             "baseline": round(win_mean, 1),
                             "threshold": round(threshold, 1)
                         })
+        
+        # --- Increase Penalty Reliability: Ignore high severity for first few requests ---
+        if len(window) < 10:
+            for a in anomalies:
+                if a["type"] == "latency_spike":
+                    a["severity"] = "medium"
         
         # --- 2. ERROR RATE SPIKE ---
         if len(window) >= self.MIN_OBSERVATIONS:

@@ -97,6 +97,7 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
             resp_body_json = proxy_resp.json()
         except Exception:
             resp_body_json = None
+            logger.debug(f"ℹ️ Response body for {normalized} is not valid JSON. Skipping schema learning.")
 
         if PLATFORM_STATE["learning_enabled"]:
             async with buffer_lock:

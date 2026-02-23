@@ -23,8 +23,8 @@ class EndpointBehavior(Base):
     endpoint_id = Column(Integer, ForeignKey("endpoints.id"), unique=True)
     
     # Latency (ms)
-    latency_mean = Column(Float, default=200.0)
-    latency_std = Column(Float, default=50.0)
+    latency_mean = Column(Float, default=400.0)
+    latency_std = Column(Float, default=100.0)
     
     # Error rates and status codes
     error_rate = Column(Float, default=0.0)

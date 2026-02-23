@@ -139,6 +139,7 @@ async def store_health_metric(endpoint_id: int, latency_ms: float, status_code: 
             )
             session.add(metric)
             await session.commit()
+            logger.info(f"📈 Health metric stored for endpoint {endpoint_id} (Score: {health_result.get('health_score')})")
     except Exception as e:
         logger.error(f"❌ Failed to store health metric: {str(e)}")
 
@@ -200,11 +201,13 @@ async def process_learning_buffer():
                     behavior.request_schema = learn_schema(behavior.request_schema, req_body)
 
                 session.add(behavior)
+                logger.info(f"🧠 Learned behavioral patterns for {method} {path_pattern}")
             except Exception as e:
                 logger.error(f"❌ Error learning from request: {str(e)}")
                 continue
 
         try:
             await session.commit()
+            logger.info(f"📁 Committed learning batch of {len(batch)} items.")
         except Exception as e:
             logger.error(f"❌ Error committing learning batch: {str(e)}")
