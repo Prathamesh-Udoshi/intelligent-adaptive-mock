@@ -10,6 +10,7 @@ import logging
 from typing import List, Dict
 
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import AsyncSessionLocal
@@ -27,7 +28,10 @@ logger = logging.getLogger("mock_platform")
 # ── Endpoint Lookup / Creation ──
 
 async def get_or_create_endpoint(session: AsyncSession, method: str, path_pattern: str):
-    """Find an existing endpoint or create a new one with default behavior + chaos config."""
+    """
+    Find an existing endpoint or create a new one.
+    NOTE: Does NOT call session.commit() — the caller is responsible for committing.
+    """
     from core.state import TARGET_URL
 
     result = await session.execute(
@@ -38,13 +42,13 @@ async def get_or_create_endpoint(session: AsyncSession, method: str, path_patter
     if not endpoint:
         endpoint = Endpoint(method=method, path_pattern=path_pattern, target_url=TARGET_URL)
         session.add(endpoint)
-        await session.flush()
+        await session.flush()  # Get the ID without committing
 
         behavior = EndpointBehavior(endpoint_id=endpoint.id)
         chaos = ChaosConfig(endpoint_id=endpoint.id)
         session.add(behavior)
         session.add(chaos)
-        await session.commit()
+        await session.flush()  # Flush behavior/chaos too, but DO NOT commit
 
     return endpoint
 
@@ -156,64 +160,103 @@ async def process_learning_buffer():
         batch = state.LEARNING_BUFFER[:]
         state.LEARNING_BUFFER = []
 
-    async with AsyncSessionLocal() as session:
-        for item in batch:
-            try:
-                method = item['method']
-                path_pattern = item['path_pattern']
-                status = item['status']
-                latency = item['latency']
-                resp_body = item['response_body']
-                req_body = item['request_body']
-
-                endpoint = await get_or_create_endpoint(session, method, path_pattern)
-                behavior_res = await session.execute(
-                    select(EndpointBehavior).where(EndpointBehavior.endpoint_id == endpoint.id)
-                )
-                behavior = behavior_res.scalars().first()
-
-                # Update EMA for Latency (Aggressive adaptation)
-                alpha = 0.5 
-                if behavior.latency_mean == 400.0 or behavior.latency_mean == 0.0:
-                    behavior.latency_mean = latency
-                else:
-                    behavior.latency_mean = (behavior.latency_mean * (1 - alpha)) + (latency * alpha)
-
-                # Update status code distributions
-                status_str = str(status)
-                if not behavior.status_code_distribution:
-                    behavior.status_code_distribution = {status_str: 1.0}
-                else:
-                    dist = dict(behavior.status_code_distribution)
-                    for k in dist:
-                        dist[k] *= (1 - alpha)
-                    dist[status_str] = dist.get(status_str, 0) + alpha
-
-                    total = sum(dist.values())
-                    behavior.status_code_distribution = {k: v/total for k, v in dist.items()}
-
-                # Update Error Rate (Aggressive adaptation)
-                is_error_sample = 1.0 if status >= 400 else 0.0
-                if behavior.error_rate == 0.0 and is_error_sample > 0:
-                    behavior.error_rate = is_error_sample 
-                else:
-                    behavior.error_rate = (behavior.error_rate * (1 - alpha)) + (is_error_sample * alpha)
-
-                # Learn Schema
-                if status < 300 and resp_body and isinstance(resp_body, (dict, list)):
-                    behavior.response_schema = learn_schema(behavior.response_schema, resp_body)
-
-                if req_body and isinstance(req_body, (dict, list)):
-                    behavior.request_schema = learn_schema(behavior.request_schema, req_body)
-
-                session.add(behavior)
-                logger.info(f"🧠 Learned behavioral patterns for {method} {path_pattern}")
-            except Exception as e:
-                logger.error(f"❌ Error learning from request: {str(e)}")
-                continue
-
+    # Process each item in its OWN session to avoid cross-contamination
+    for item in batch:
         try:
-            await session.commit()
-            logger.info(f"📁 Committed learning batch of {len(batch)} items.")
+            method = item['method']
+            path_pattern = item['path_pattern']
+            status = item['status']
+            latency = item['latency']
+            resp_body = item['response_body']
+            req_body = item['request_body']
+
+            behav_found = False
+            async with AsyncSessionLocal() as session:
+                async with session.begin():  # Atomic transaction per item
+                    # Find endpoint (or create it within this transaction)
+                    result = await session.execute(
+                        select(Endpoint).where(
+                            Endpoint.method == method,
+                            Endpoint.path_pattern == path_pattern
+                        )
+                    )
+                    endpoint = result.scalars().first()
+                    behavior = None
+
+                    if not endpoint:
+                        from core.state import TARGET_URL
+                        endpoint = Endpoint(method=method, path_pattern=path_pattern, target_url=TARGET_URL)
+                        session.add(endpoint)
+                        await session.flush()  # Get assigned ID
+                        # Create and KEEP reference — don't re-select, the object is already live
+                        behavior = EndpointBehavior(endpoint_id=endpoint.id)
+                        chaos = ChaosConfig(endpoint_id=endpoint.id)
+                        session.add(behavior)
+                        session.add(chaos)
+                        await session.flush()
+                    else:
+                        # Only SELECT for existing endpoints — for new ones we already have the object
+                        b_res = await session.execute(
+                            select(EndpointBehavior).where(EndpointBehavior.endpoint_id == endpoint.id)
+                        )
+                        behavior = b_res.scalars().first()
+
+                    if not behavior:
+                        logger.warning(f"⚠️ No behavior row for {method} {path_pattern}, skipping.")
+                    else:
+                        behav_found = True
+                        # ── Latency (snap on first real observation) ──
+                        alpha = 0.5
+                        if behavior.latency_mean >= 399.9:  # Still at default 400ms
+                            behavior.latency_mean = round(latency, 2)
+                        else:
+                            behavior.latency_mean = round(
+                                (behavior.latency_mean * (1 - alpha)) + (latency * alpha), 2
+                            )
+
+                        # ── Status Code Distribution ──
+                        status_str = str(status)
+                        if not behavior.status_code_distribution:
+                            new_dist = {status_str: 1.0}
+                        else:
+                            new_dist = dict(behavior.status_code_distribution)
+                            for k in list(new_dist.keys()):
+                                new_dist[k] = round(new_dist[k] * (1 - alpha), 6)
+                            new_dist[status_str] = round(new_dist.get(status_str, 0.0) + alpha, 6)
+                            total = sum(new_dist.values())
+                            new_dist = {k: round(v / total, 6) for k, v in new_dist.items()}
+                        behavior.status_code_distribution = new_dist
+                        flag_modified(behavior, "status_code_distribution")
+
+                        # ── Error Rate ──
+                        is_error_sample = 1.0 if status >= 400 else 0.0
+                        if behavior.error_rate == 0.0 and is_error_sample > 0:
+                            behavior.error_rate = round(is_error_sample, 4)
+                        else:
+                            behavior.error_rate = round(
+                                (behavior.error_rate * (1 - alpha)) + (is_error_sample * alpha), 4
+                            )
+
+                        # ── Schema Learning ──
+                        if status < 300 and resp_body and isinstance(resp_body, (dict, list)):
+                            behavior.response_schema = learn_schema(behavior.response_schema, resp_body)
+                            flag_modified(behavior, "response_schema")
+                            logger.info(f"📋 Response schema captured for {method} {path_pattern}")
+                        else:
+                            logger.debug(f"⏭️  Schema skip: status={status}, body_type={type(resp_body).__name__}, body_truthy={bool(resp_body)}")
+
+                        if req_body and isinstance(req_body, (dict, list)):
+                            behavior.request_schema = learn_schema(behavior.request_schema, req_body)
+                            flag_modified(behavior, "request_schema")
+                            logger.info(f"📋 Request schema captured for {method} {path_pattern}")
+
+                        session.add(behavior)
+                        # session.begin() auto-commits on clean exit
+
+            logger.info(f"✅ Learned: {method} {path_pattern} | latency={latency:.0f}ms | status={status}")
+
         except Exception as e:
-            logger.error(f"❌ Error committing learning batch: {str(e)}")
+            logger.error(f"❌ Error learning from {item.get('method')} {item.get('path_pattern')}: {str(e)}")
+            continue
+
+    logger.info(f"📁 Processed learning batch of {len(batch)} item(s).")

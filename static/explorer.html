@@ -514,11 +514,11 @@
                         <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; margin-top: 24px;">
                             <div style="min-width: 0;">
                                 <span class="stat-label">Learned Schema (Request)</span>
-                                <pre style="margin-top: 10px; color: ${Object.keys(stats.request_schema || {}).length === 0 ? '#444' : 'var(--accent)'}">${Object.keys(stats.request_schema || {}).length === 0 ? '// No request body captured yet...' : JSON.stringify(stats.request_schema, null, 4)}</pre>
+                                <pre style="margin-top: 10px; color: ${stats.request_schema && Object.keys(stats.request_schema).length > 0 ? 'var(--accent)' : '#444'}">${stats.request_schema && Object.keys(stats.request_schema).length > 0 ? JSON.stringify(stats.request_schema, null, 4) : '// No request body captured yet...'}</pre>
                             </div>
                             <div style="min-width: 0;">
                                 <span class="stat-label">Learned Schema (Response)</span>
-                                <pre style="margin-top: 10px; color: ${Object.keys(stats.schema_preview || {}).length === 0 ? '#444' : 'var(--accent)'}">${Object.keys(stats.schema_preview || {}).length === 0 ? '// No response body captured yet...' : JSON.stringify(stats.schema_preview, null, 4)}</pre>
+                                <pre style="margin-top: 10px; color: ${stats.schema_preview && Object.keys(stats.schema_preview).length > 0 ? 'var(--accent)' : '#444'}">${stats.schema_preview && Object.keys(stats.schema_preview).length > 0 ? JSON.stringify(stats.schema_preview, null, 4) : '// No response body captured yet...'}</pre>
                             </div>
                         </div>
                     `;

@@ -53,6 +53,7 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
 
     async with AsyncSessionLocal() as session:
         endpoint = await get_or_create_endpoint(session, method, normalized)
+        await session.commit()  # Persist new endpoint if just created
         behavior_res = await session.execute(
             select(EndpointBehavior).where(EndpointBehavior.endpoint_id == endpoint.id)
         )

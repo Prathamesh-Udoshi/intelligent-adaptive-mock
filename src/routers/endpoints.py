@@ -10,6 +10,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, update
+from sqlalchemy.orm.attributes import flag_modified
 
 from core.database import AsyncSessionLocal
 from core.models import Endpoint, EndpointBehavior, ChaosConfig
@@ -62,9 +63,12 @@ async def create_manual_endpoint(request: Request):
 
             if behavior and response_body:
                 behavior.response_schema = learn_schema(behavior.response_schema, response_body)
+                flag_modified(behavior, "response_schema")
                 behavior.status_code_distribution = {str(status_code): 1.0}
+                flag_modified(behavior, "status_code_distribution")
             if behavior and request_body:
                 behavior.request_schema = learn_schema(behavior.request_schema, request_body)
+                flag_modified(behavior, "request_schema")
 
             session.add(behavior)
             await session.commit()
