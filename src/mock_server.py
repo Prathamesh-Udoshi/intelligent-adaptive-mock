@@ -40,6 +40,21 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     await init_db()
+    
+    # Start the "Brain" — background learning loop
+    import asyncio
+    from services.learning import process_learning_buffer
+    
+    async def learning_loop():
+        while True:
+            try:
+                await process_learning_buffer()
+            except Exception as e:
+                logger.error(f"❌ Learning loop error: {e}")
+            await asyncio.sleep(5) # Process buffer every 5 seconds
+            
+    asyncio.create_task(learning_loop())
+    logger.info("🧠 Learning engine started (Processing every 5s)")
 
 # ── Mount Routers ──
 # ORDER MATTERS: Specific routes MUST come before the catch-all proxy.

@@ -172,9 +172,12 @@ async def process_learning_buffer():
                 )
                 behavior = behavior_res.scalars().first()
 
-                # Update EMA for Latency
+                # Update EMA for Latency (Fast adaptation for first request)
                 alpha = 0.1
-                behavior.latency_mean = (behavior.latency_mean * (1 - alpha)) + (latency * alpha)
+                if behavior.latency_mean == 400.0: # If still default, adopt first sample directly
+                    behavior.latency_mean = latency
+                else:
+                    behavior.latency_mean = (behavior.latency_mean * (1 - alpha)) + (latency * alpha)
 
                 # Update status code distributions
                 status_str = str(status)
@@ -189,9 +192,12 @@ async def process_learning_buffer():
                     total = sum(dist.values())
                     behavior.status_code_distribution = {k: v/total for k, v in dist.items()}
 
-                # Update Error Rate
-                is_error = 1.0 if status >= 500 else 0.0
-                behavior.error_rate = (behavior.error_rate * (1 - alpha)) + (is_error * alpha)
+                # Update Error Rate (Count 4xx and 5xx as errors)
+                is_error_sample = 1.0 if status >= 400 else 0.0
+                if behavior.error_rate == 0.0 and is_error_sample > 0:
+                    behavior.error_rate = is_error_sample # Fast initial spike detection
+                else:
+                    behavior.error_rate = (behavior.error_rate * (1 - alpha)) + (is_error_sample * alpha)
 
                 # Learn Schema
                 if status < 300 and resp_body and isinstance(resp_body, (dict, list)):

@@ -176,19 +176,36 @@ async def export_openapi():
                     "schema": {"type": "string"}
                 })
 
-            paths[p][m] = {
-                "summary": f"Inferred {ep.method} for {p}",
-                "parameters": parameters,
-                "responses": {
-                    "200": {
-                        "description": "Learned Success Response",
-                        "content": {
-                            "application/json": {
-                                "example": behavior.response_schema
+            # Generate Responses based on learned status code distribution
+            responses = {}
+            if behavior.status_code_distribution:
+                for code, prob in behavior.status_code_distribution.items():
+                    # Only include success codes in the main documentation
+                    if int(code) < 400:
+                        responses[code] = {
+                            "description": f"Learned Response (Occurs {prob*100:.0f}% of cases)",
+                            "content": {
+                                "application/json": {
+                                    "example": behavior.response_schema
+                                }
                             }
+                        }
+            
+            # Fallback if no distribution learned yet
+            if not responses:
+                responses["200"] = {
+                    "description": "Learned Success Response",
+                    "content": {
+                        "application/json": {
+                            "example": behavior.response_schema
                         }
                     }
                 }
+
+            paths[p][m] = {
+                "summary": f"Inferred {ep.method} for {p}",
+                "parameters": parameters,
+                "responses": responses
             }
 
             if behavior.request_schema and m in ['post', 'put', 'patch', 'delete']:
