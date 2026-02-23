@@ -103,7 +103,8 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
             async with buffer_lock:
                 LEARNING_BUFFER.append({
                     "method": method, "path_pattern": normalized,
-                    "status": proxy_resp.status_code, "latency": latency_ms,
+                    "status": proxy_resp.status_code if proxy_resp else 502,
+                    "latency": latency_ms,
                     "response_body": resp_body_json,
                     "request_body": req_body_json
                 })
@@ -180,8 +181,19 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
             headers=dict(proxy_resp.headers)
         )
     except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as e:
+        latency_ms = (time.time() - start_time) * 1000
         # AUTOMATIC FAILOVER: Backend is down, serve a mock instead!
         logger.warning(f"⚠️ PROXY FAILOVER: Backend {state.TARGET_URL} unreachable. Error: {str(e)}")
+        
+        # RECORD THIS FAIL OVER AS AN OBSERVATION
+        if PLATFORM_STATE["learning_enabled"]:
+            async with buffer_lock:
+                LEARNING_BUFFER.append({
+                    "method": method, "path_pattern": normalized,
+                    "status": 502, "latency": latency_ms,
+                    "response_body": None, "request_body": req_body_json
+                })
+        
         return await generate_endpoint_mock(behavior, chaos, normalized, request, is_failover=True)
     except Exception as e:
         logger.error(f"💥 UNEXPECTED PROXY ERROR: {str(e)}")

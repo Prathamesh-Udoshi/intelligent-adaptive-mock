@@ -50,4 +50,7 @@ def normalize_path(path: str) -> str:
         else:
             normalized_segments.append(seg)
             
-    return '/'.join(normalized_segments)
+    res = '/'.join(normalized_segments)
+    if not res.startswith('/'):
+        res = '/' + res
+    return res
