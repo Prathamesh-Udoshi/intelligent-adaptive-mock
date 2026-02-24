@@ -61,6 +61,7 @@
 
         .nav-links {
             display: flex;
+            align-items: center;
             gap: 30px;
         }
 
@@ -210,6 +211,22 @@
 </head>
 
 <body>
+    <!-- Auth Loading Overlay -->
+    <div id="authOverlay"
+        style="position:fixed;inset:0;background:#050505;z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+        <div
+            style="width:32px;height:32px;border:3px solid rgba(164,142,255,0.2);border-top:3px solid #a48eff;border-radius:50%;animation:spin 1s linear infinite;">
+        </div>
+        <div style="font-size:13px;color:#555;font-family:'Outfit',sans-serif;">Checking session…</div>
+    </div>
+    <style>
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg)
+            }
+        }
+    </style>
+
     <div class="bg-glow"></div>
 
     <nav class="nav">
@@ -219,9 +236,7 @@
             <a href="/admin/dashboard" class="nav-link">Console</a>
             <a href="/admin/explorer" class="nav-link active">Explorer</a>
             <a href="/admin/guide" class="nav-link">Guide</a>
-            <a href="/admin/docs" class="nav-link">API Docs</a>
-            <a href="/login" class="nav-link"
-                style="margin-left: 10px; padding: 6px 16px; background: var(--accent); color: #000; border-radius: 8px; font-weight: 800;">Login</a>
+            <span id="nav-user"></span>
         </div>
     </nav>
 
@@ -679,6 +694,47 @@
             a.click();
             URL.revokeObjectURL(url);
         }
+    </script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        async function initAuth() {
+            try {
+                const resp = await fetch('/api/config');
+                const firebaseConfig = await resp.json();
+                const app = initializeApp(firebaseConfig);
+                const auth = getAuth(app);
+
+                onAuthStateChanged(auth, (user) => {
+                    const overlay = document.getElementById('authOverlay');
+                    const navUser = document.getElementById('nav-user');
+
+                    if (user) {
+                        if (overlay) overlay.style.display = 'none';
+                        if (navUser) {
+                            navUser.style.display = "flex";
+                            navUser.style.alignItems = "center";
+                            navUser.style.gap = "15px";
+                            navUser.innerHTML = `
+                                <a href="/admin/docs" class="nav-link" style="margin: 0; padding: 0;">API Docs</a>
+                                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                    <span style="font-size: 11px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; line-height: 1;">Signed In As</span>
+                                    <span style="font-size: 13px; color: #fff; font-weight: 600; line-height: 1;">${user.displayName || user.email.split('@')[0]}</span>
+                                </div>
+                                <button id="signOutBtn" class="nav-link" style="padding: 6px 16px; background: rgba(255, 71, 87, 0.1); color: #ff4757; border: 1px solid rgba(255, 71, 87, 0.2); border-radius: 8px; font-weight: 800; cursor: pointer; margin-left: 5px;">Sign Out</button>
+                            `;
+                            document.getElementById('signOutBtn').onclick = () => signOut(auth).then(() => window.location.href = '/login');
+                        }
+                    } else {
+                        window.location.href = '/login';
+                    }
+                });
+            } catch (e) {
+                console.error("Auth initialization failed", e);
+            }
+        }
+        initAuth();
     </script>
 </body>
 

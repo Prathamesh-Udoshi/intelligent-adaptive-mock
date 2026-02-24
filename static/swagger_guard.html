@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authenticating | Evolutionary Mock</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            background: #050505;
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .loader {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(164, 142, 255, 0.1);
+            border-top: 4px solid #a48eff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .text {
+            font-size: 14px;
+            color: #888;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="loader"></div>
+    <div class="text">VERIFYING PERMISSIONS...</div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        async function init() {
+            try {
+                const resp = await fetch('/api/config');
+                const cfg = await resp.json();
+                const auth = getAuth(initializeApp(cfg));
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        // Authorized! Redirect to the internal swagger UI
+                        window.location.replace('/admin/swagger-ui');
+                    } else {
+                        // Not logged in
+                        window.location.replace('/login?redirect=/admin/docs');
+                    }
+                });
+            } catch (e) {
+                console.error(e);
+                window.location.replace('/login');
+            }
+        }
+        init();
+    </script>
+</body>
+
+</html>

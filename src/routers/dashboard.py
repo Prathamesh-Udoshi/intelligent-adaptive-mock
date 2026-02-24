@@ -88,14 +88,22 @@ async def get_login():
     return JSONResponse({"error": "login.html not found"}, status_code=404)
 
 
-@router.get("/admin/docs")
-async def get_swagger_ui():
+@router.get("/admin/swagger-ui")
+async def get_internal_swagger():
     from fastapi.openapi.docs import get_swagger_ui_html
     return get_swagger_ui_html(
         openapi_url="/admin/export-openapi",
         title="AI Truth Swagger",
         swagger_favicon_url="https://fastapi.tiangolo.com/img/favicon.png"
     )
+
+
+@router.get("/admin/docs")
+async def get_swagger_guard():
+    guard_path = os.path.join(STATIC_DIR, "swagger_guard.html")
+    if os.path.exists(guard_path):
+        return FileResponse(guard_path)
+    return JSONResponse({"error": "swagger_guard.html not found"}, status_code=404)
 
 
 @router.get("/admin/guide")
