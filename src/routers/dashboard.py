@@ -20,7 +20,38 @@ import re
 
 router = APIRouter()
 
+from dotenv import load_dotenv
+import logging
+
+logger = logging.getLogger("mock_platform")
+
+# Explicitly load from root directory
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_path = os.path.join(project_root, "..", ".env")
+load_dotenv(dotenv_path=env_path)
+
+if not os.path.exists(env_path):
+    logger.warning(f"⚠️ .env file not found at {env_path}")
+else:
+    logger.info(f"✅ .env file loaded from {env_path}")
+
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "static")
+
+@router.get("/api/config")
+async def get_config():
+    config = {
+        "apiKey": os.environ.get("FIREBASE_API_KEY"),
+        "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN"),
+        "projectId": os.environ.get("FIREBASE_PROJECT_ID"),
+        "storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET"),
+        "messagingSenderId": os.environ.get("FIREBASE_MESSAGING_SENDER_ID"),
+        "appId": os.environ.get("FIREBASE_APP_ID"),
+    }
+    # Log empty keys to identify which one is missing
+    missing = [k for k, v in config.items() if not v]
+    if missing:
+        logger.error(f"❌ Missing Firebase config keys: {', '.join(missing)}")
+    return config
 
 
 # ── Static Pages ──
@@ -47,6 +78,14 @@ async def get_explorer():
     if os.path.exists(explorer_path):
         return FileResponse(explorer_path)
     return JSONResponse({"error": "Explorer explorer.html not found"}, status_code=404)
+
+
+@router.get("/login")
+async def get_login():
+    login_path = os.path.join(STATIC_DIR, "login.html")
+    if os.path.exists(login_path):
+        return FileResponse(login_path)
+    return JSONResponse({"error": "login.html not found"}, status_code=404)
 
 
 @router.get("/admin/docs")

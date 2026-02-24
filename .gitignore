@@ -6,3 +6,4 @@ data/*.json
 *.db
 docs/
 DEPLOYMENT.md
+.env
