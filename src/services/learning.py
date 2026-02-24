@@ -20,7 +20,7 @@ from core.state import (
 )
 from core.websocket import manager
 from core.models import Endpoint, EndpointBehavior, ChaosConfig, ContractDrift, HealthMetric
-from utils.schema_learner import learn_schema
+from utils.schema_intelligence import learn_and_compare
 
 logger = logging.getLogger("mock_platform")
 
@@ -59,7 +59,8 @@ async def add_to_logs(method: str, path: str, status: int, latency: int, type: s
     """Append a log entry and broadcast to WebSocket clients."""
     async with logs_lock:
         log_entry = {
-            "time": datetime.datetime.now().strftime("%H:%M:%S"),
+            "time": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),  # UTC ISO — browser localises it
+
             "method": method,
             "path": path,
             "status": status,
@@ -237,16 +238,30 @@ async def process_learning_buffer():
                                 (behavior.error_rate * (1 - alpha)) + (is_error_sample * alpha), 4
                             )
 
-                        # ── Schema Learning ──
+                        # ── Schema Learning (Schema Intelligence Engine) ──
                         if status < 300 and resp_body and isinstance(resp_body, (dict, list)):
-                            behavior.response_schema = learn_schema(behavior.response_schema, resp_body)
+                            # learn_and_compare updates the SchemaRegistry (persisted to disk)
+                            # AND returns the rich schema for storing in the DB behavior record
+                            new_schema, changes = learn_and_compare(
+                                f"{method} {path_pattern}",  # keyed by "METHOD /path" for uniqueness
+                                resp_body
+                            )
+                            behavior.response_schema = new_schema
                             flag_modified(behavior, "response_schema")
                             logger.info(f"📋 Response schema captured for {method} {path_pattern}")
+                            if changes:
+                                breaking = [c for c in changes if c["severity"] == "BREAKING"]
+                                if breaking:
+                                    logger.warning(f"🚨 BREAKING schema change on {method} {path_pattern}: {breaking[0]['path']}")
                         else:
                             logger.debug(f"⏭️  Schema skip: status={status}, body_type={type(resp_body).__name__}, body_truthy={bool(resp_body)}")
 
                         if req_body and isinstance(req_body, (dict, list)):
-                            behavior.request_schema = learn_schema(behavior.request_schema, req_body)
+                            req_schema, _ = learn_and_compare(
+                                f"REQ {method} {path_pattern}",
+                                req_body
+                            )
+                            behavior.request_schema = req_schema
                             flag_modified(behavior, "request_schema")
                             logger.info(f"📋 Request schema captured for {method} {path_pattern}")
 

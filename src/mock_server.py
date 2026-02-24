@@ -60,8 +60,11 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     from core.state import adaptive_detector
+    from utils.schema_intelligence import schema_registry
     adaptive_detector.flush()
-    logger.info("💾 Adaptive detector baselines persisted on shutdown.")
+    schema_registry.flush()
+    logger.info("💾 Adaptive detector baselines and schemas persisted on shutdown.")
+
 
 # ── Mount Routers ──
 # ORDER MATTERS: Specific routes MUST come before the catch-all proxy.

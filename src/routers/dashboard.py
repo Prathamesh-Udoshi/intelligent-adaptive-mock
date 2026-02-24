@@ -59,6 +59,14 @@ async def get_swagger_ui():
     )
 
 
+@router.get("/admin/guide")
+async def get_user_guide():
+    guide_path = os.path.join(STATIC_DIR, "docs.html")
+    if os.path.exists(guide_path):
+        return FileResponse(guide_path)
+    return JSONResponse({"error": "docs.html not found"}, status_code=404)
+
+
 # ── Config & State ──
 
 @router.get("/admin/config")

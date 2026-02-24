@@ -29,7 +29,7 @@ from services.learning import (
 )
 from utils.normalization import normalize_path
 from utils.schema_learner import generate_mock_response
-from utils.drift_detector import detect_schema_drift, calculate_drift_score, format_drift_summary, narrate_drift
+from utils.schema_intelligence import learn_and_compare, contract_reporter
 
 logger = logging.getLogger("mock_platform")
 
@@ -111,26 +111,32 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                 })
                 background_tasks.add_task(process_learning_buffer)
 
-        # CONTRACT DRIFT DETECTION
+        # CONTRACT DRIFT DETECTION (Schema Intelligence Engine)
         has_drift_detected = False
-        if resp_body_json and behavior and behavior.response_schema:
-            has_drift, drift_issues = detect_schema_drift(behavior.response_schema, resp_body_json)
+        if resp_body_json and isinstance(resp_body_json, (dict, list)):
+            _, changes = learn_and_compare(normalized, resp_body_json, req_body_json)
 
-            if has_drift:
+            # Only flag BREAKING or WARNING changes as "drift" worth alerting on
+            severe_changes = [c for c in changes if c["severity"] in ("BREAKING", "WARNING")]
+            if severe_changes:
                 has_drift_detected = True
-                drift_score = calculate_drift_score(drift_issues)
-                drift_summary = format_drift_summary(drift_issues)
-
-                narration = narrate_drift(drift_issues, endpoint_path=normalized)
-                logger.warning(f"🚨 CONTRACT DRIFT DETECTED: {normalized} - {drift_summary}")
-                logger.info(f"📖 AI Narrator Report:\n{narration}")
+                report = contract_reporter.generate(
+                    # Re-build ContractChange objects from dicts for the reporter
+                    # (generate() also accepts pre-built dicts via the change_dicts path)
+                    [],   # Empty — narrative already logged by learn_and_compare
+                    endpoint=normalized
+                )
+                drift_score  = min(100.0, len([c for c in changes if c["severity"] == "BREAKING"]) * 10.0
+                                        + len([c for c in changes if c["severity"] == "WARNING"]) * 5.0)
+                drift_summary = f"{len(severe_changes)} contract change(s): " + \
+                    ", ".join(f"{c['change_type']} at {c['path']}" for c in severe_changes[:3])
 
                 background_tasks.add_task(
                     store_drift_alert,
                     endpoint.id,
                     drift_score,
                     drift_summary,
-                    drift_issues
+                    severe_changes
                 )
 
         # HEALTH MONITORING (Adaptive Anomaly Detection)

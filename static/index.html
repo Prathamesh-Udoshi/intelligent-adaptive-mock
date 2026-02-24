@@ -347,7 +347,8 @@
             <a href="/" class="nav-link">Home</a>
             <a href="/admin/dashboard" class="nav-link active">Console</a>
             <a href="/admin/explorer" class="nav-link">Explorer</a>
-            <a href="/admin/docs" class="nav-link">Docs</a>
+            <a href="/admin/guide" class="nav-link">Guide</a>
+            <a href="/admin/docs" class="nav-link">API Docs</a>
         </div>
     </nav>
 
@@ -768,6 +769,17 @@
             await loadEndpoints();
         }
 
+        function formatTime(isoStr) {
+            if (!isoStr) return "--:--:--";
+            try {
+                // If the string is already HH:MM:SS (old logs), return it.
+                // Otherwise, parse as ISO and localize.
+                if (isoStr.indexOf('-') === -1 && isoStr.indexOf(':') !== -1) return isoStr;
+                const d = new Date(isoStr);
+                return d.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            } catch (e) { return isoStr; }
+        }
+
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -785,7 +797,7 @@
                     const driftHtml = log.has_drift ? `<span title="Contract Drift Detected" style="cursor:help;">🚨</span>` : '';
                     const healthDot = log.health === 'critical' ? '🔴' : log.health === 'degraded' ? '🟡' : '🟢';
                     row.innerHTML = `
-                        <td>${log.time}</td>
+                        <td>${formatTime(log.time)}</td>
                         <td><span class="badge ${badgeClass}">${log.type}</span></td>
                         <td>${log.method} ${log.path}</td>
                         <td class="${statusClass}">${log.status}</td>
@@ -815,7 +827,7 @@
                 const driftHtml = log.has_drift ? `<span title="Contract Drift Detected" style="cursor:help;">🚨</span>` : '';
                 const healthDot = log.health === 'critical' ? '🔴' : log.health === 'degraded' ? '🟡' : '🟢';
                 row.innerHTML = `
-                    <td>${log.time}</td>
+                    <td>${formatTime(log.time)}</td>
                     <td><span class="badge ${badgeClass}">${log.type}</span></td>
                     <td>${log.method} ${log.path}</td>
                     <td class="${statusClass}">${log.status}</td>

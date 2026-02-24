@@ -1,0 +1,1423 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docs | Evolutionary Mock Suite</title>
+    <meta name="description"
+        content="Complete documentation for the Evolutionary Mock Suite — proxy setup, ngrok localhost tunneling, dashboard features, contract drift, and type exports.">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050505;
+            --panel: #0d0d0f;
+            --panel-2: #111114;
+            --accent: #a48eff;
+            --accent-glow: rgba(164, 142, 255, 0.25);
+            --cyan: #00d2ff;
+            --green: #5cb85c;
+            --red: #ff4757;
+            --yellow: #f0ad4e;
+            --text: #ffffff;
+            --text-dim: #888891;
+            --text-muted: #555560;
+            --glass: rgba(20, 20, 25, 0.8);
+            --border: rgba(255, 255, 255, 0.06);
+            --border-hover: rgba(164, 142, 255, 0.35);
+            --sidebar-w: 260px;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        /* ── Background ── */
+        .bg-glow {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(circle at 15% 25%, rgba(164, 142, 255, 0.04) 0%, transparent 50%),
+                radial-gradient(circle at 85% 75%, rgba(0, 210, 255, 0.03) 0%, transparent 50%);
+            z-index: -1;
+        }
+
+        /* ── Navbar ── */
+        .nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 60px;
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 200;
+        }
+
+        .logo {
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            background: linear-gradient(90deg, #fff, var(--accent));
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-decoration: none;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 28px;
+        }
+
+        .nav-link {
+            text-decoration: none;
+            color: var(--text-dim);
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-link:hover {
+            color: var(--accent);
+        }
+
+        .nav-link.active {
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        /* ── Layout ── */
+        .layout {
+            display: grid;
+            grid-template-columns: var(--sidebar-w) 1fr;
+            min-height: calc(100vh - 65px);
+            max-width: 1280px;
+            margin: 0 auto;
+        }
+
+        /* ── Sidebar TOC ── */
+        .sidebar {
+            position: sticky;
+            top: 65px;
+            height: calc(100vh - 65px);
+            overflow-y: auto;
+            padding: 40px 0 40px 0;
+            border-right: 1px solid var(--border);
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: #222;
+            border-radius: 4px;
+        }
+
+        .toc-section {
+            margin-bottom: 6px;
+        }
+
+        .toc-label {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            padding: 0 24px;
+            margin: 20px 0 6px 0;
+        }
+
+        .toc-link {
+            display: block;
+            padding: 7px 24px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-dim);
+            text-decoration: none;
+            border-left: 2px solid transparent;
+            transition: all 0.2s;
+            line-height: 1.4;
+        }
+
+        .toc-link:hover {
+            color: var(--text);
+            border-left-color: var(--border-hover);
+        }
+
+        .toc-link.active {
+            color: var(--accent);
+            border-left-color: var(--accent);
+            background: rgba(164, 142, 255, 0.05);
+        }
+
+        .toc-sub {
+            display: block;
+            padding: 5px 24px 5px 36px;
+            font-size: 12px;
+            color: var(--text-muted);
+            text-decoration: none;
+            border-left: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .toc-sub:hover {
+            color: var(--text-dim);
+            border-left-color: #333;
+        }
+
+        /* ── Main Content ── */
+        .content {
+            padding: 60px 70px 100px 70px;
+            max-width: 860px;
+        }
+
+        /* ── Section anchor offset for sticky nav ── */
+        .doc-section {
+            scroll-margin-top: 90px;
+            margin-bottom: 80px;
+        }
+
+        /* ── Typography ── */
+        .doc-section h2 {
+            font-size: 30px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+
+        .section-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 16px 0 28px 0;
+        }
+
+        .doc-section h3 {
+            font-size: 18px;
+            font-weight: 700;
+            margin: 36px 0 12px 0;
+            color: var(--text);
+        }
+
+        .doc-section p {
+            color: var(--text-dim);
+            font-size: 15px;
+            margin-bottom: 14px;
+        }
+
+        .doc-section ul,
+        .doc-section ol {
+            color: var(--text-dim);
+            font-size: 15px;
+            padding-left: 22px;
+            margin-bottom: 14px;
+        }
+
+        .doc-section li {
+            margin-bottom: 7px;
+        }
+
+        .doc-section strong {
+            color: var(--text);
+            font-weight: 700;
+        }
+
+        /* ── Page Hero ── */
+        .page-header {
+            margin-bottom: 60px;
+        }
+
+        .page-header .badge {
+            display: inline-block;
+            background: rgba(164, 142, 255, 0.1);
+            color: var(--accent);
+            padding: 4px 14px;
+            border-radius: 100px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border: 1px solid rgba(164, 142, 255, 0.2);
+            margin-bottom: 16px;
+        }
+
+        .page-header h1 {
+            font-size: 48px;
+            font-weight: 800;
+            letter-spacing: -2px;
+            line-height: 1.05;
+            margin-bottom: 16px;
+        }
+
+        .page-header p {
+            font-size: 17px;
+            color: var(--text-dim);
+            line-height: 1.7;
+            max-width: 560px;
+        }
+
+        /* ── Code blocks ── */
+        .code-block {
+            background: #000;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 14px;
+            padding: 20px 24px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: var(--green);
+            overflow-x: auto;
+            margin: 16px 0;
+            line-height: 1.7;
+            position: relative;
+        }
+
+        .code-block .comment {
+            color: #555;
+        }
+
+        .code-block .cmd {
+            color: var(--accent);
+        }
+
+        .code-block .url {
+            color: var(--cyan);
+        }
+
+        .code-block .key {
+            color: #ff9900;
+        }
+
+        .code-block .copy-btn {
+            position: absolute;
+            top: 12px;
+            right: 14px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-dim);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Outfit', sans-serif;
+            letter-spacing: 0.5px;
+        }
+
+        .code-block .copy-btn:hover {
+            background: rgba(164, 142, 255, 0.15);
+            color: var(--accent);
+        }
+
+        .inline-code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+            color: var(--accent);
+            background: rgba(164, 142, 255, 0.08);
+            padding: 2px 7px;
+            border-radius: 5px;
+        }
+
+        /* ── Callout boxes ── */
+        .callout {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+            padding: 16px 20px;
+            border-radius: 12px;
+            font-size: 14px;
+            margin: 20px 0;
+            line-height: 1.6;
+        }
+
+        .callout-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        .callout.info {
+            background: rgba(0, 210, 255, 0.06);
+            border: 1px solid rgba(0, 210, 255, 0.15);
+            color: #a0dff0;
+        }
+
+        .callout.warning {
+            background: rgba(240, 173, 78, 0.07);
+            border: 1px solid rgba(240, 173, 78, 0.2);
+            color: #d4a96f;
+        }
+
+        .callout.success {
+            background: rgba(92, 184, 92, 0.07);
+            border: 1px solid rgba(92, 184, 92, 0.2);
+            color: #88c888;
+        }
+
+        .callout.danger {
+            background: rgba(255, 71, 87, 0.07);
+            border: 1px solid rgba(255, 71, 87, 0.2);
+            color: #d47070;
+        }
+
+        /* ── Step list ── */
+        .steps {
+            list-style: none;
+            padding: 0;
+            counter-reset: steps;
+        }
+
+        .steps li {
+            counter-increment: steps;
+            padding: 18px 20px 18px 60px;
+            position: relative;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: var(--text-dim);
+            transition: border-color 0.2s;
+        }
+
+        .steps li:hover {
+            border-color: rgba(164, 142, 255, 0.25);
+        }
+
+        .steps li::before {
+            content: counter(steps);
+            position: absolute;
+            left: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(164, 142, 255, 0.12);
+            border: 1px solid rgba(164, 142, 255, 0.3);
+            color: var(--accent);
+            font-size: 13px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .steps li strong {
+            color: var(--text);
+            display: block;
+            margin-bottom: 4px;
+            font-size: 15px;
+        }
+
+        /* ── Feature cards ── */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin: 20px 0;
+        }
+
+        .feature-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px 22px;
+            transition: border-color 0.3s, transform 0.2s;
+        }
+
+        .feature-card:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-3px);
+        }
+
+        .feature-card .fc-icon {
+            font-size: 22px;
+            margin-bottom: 10px;
+        }
+
+        .feature-card h4 {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .feature-card p {
+            font-size: 13px;
+            color: var(--text-dim);
+            margin: 0;
+            line-height: 1.6;
+        }
+
+        /* ── Tag pills ── */
+        .tag {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            margin: 3px 4px 3px 0;
+        }
+
+        .tag-break {
+            background: rgba(255, 71, 87, 0.12);
+            color: var(--red);
+            border: 1px solid rgba(255, 71, 87, 0.25);
+        }
+
+        .tag-warn {
+            background: rgba(240, 173, 78, 0.12);
+            color: var(--yellow);
+            border: 1px solid rgba(240, 173, 78, 0.25);
+        }
+
+        .tag-info {
+            background: rgba(164, 142, 255, 0.12);
+            color: var(--accent);
+            border: 1px solid rgba(164, 142, 255, 0.25);
+        }
+
+        /* ── Table ── */
+        .doc-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13.5px;
+            margin: 20px 0;
+        }
+
+        .doc-table th {
+            text-align: left;
+            padding: 10px 16px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .doc-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            color: var(--text-dim);
+            vertical-align: top;
+        }
+
+        .doc-table tr:hover td {
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        /* ── Back to top ── */
+        .back-top {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 700;
+            text-decoration: none;
+            letter-spacing: 0.5px;
+            padding: 6px 0;
+            transition: color 0.2s;
+        }
+
+        .back-top:hover {
+            color: var(--accent);
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 900px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: static;
+                height: auto;
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+                padding: 20px 0;
+            }
+
+            .content {
+                padding: 40px 24px 80px;
+            }
+
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .nav {
+                padding: 18px 24px;
+            }
+
+            .page-header h1 {
+                font-size: 36px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg-glow"></div>
+
+    <!-- Nav -->
+    <nav class="nav">
+        <a href="/" class="logo">EVOLUTIONARY MOCK</a>
+        <div class="nav-links">
+            <a href="/" class="nav-link">Home</a>
+            <a href="/admin/dashboard" class="nav-link">Console</a>
+            <a href="/admin/explorer" class="nav-link">Explorer</a>
+            <a href="/admin/guide" class="nav-link active">Guide</a>
+            <a href="/admin/docs" class="nav-link">API Docs</a>
+        </div>
+    </nav>
+
+    <div class="layout">
+
+        <!-- ── Sidebar TOC ── -->
+        <aside class="sidebar" id="sidebar">
+            <div class="toc-label">Getting Started</div>
+            <a href="#overview" class="toc-link" data-section="overview">Overview</a>
+            <a href="#quickstart" class="toc-link" data-section="quickstart">Quickstart</a>
+
+            <div class="toc-label">Connecting Your API</div>
+            <a href="#proxy-setup" class="toc-link" data-section="proxy-setup">Proxy Setup</a>
+            <a href="#localhost" class="toc-link" data-section="localhost">Localhost & ngrok</a>
+
+            <div class="toc-label">Platform Features</div>
+            <a href="#control-deck" class="toc-link" data-section="control-deck">Control Deck</a>
+            <a href="#learning-mode" class="toc-link" data-section="learning-mode">Learning & Mock Mode</a>
+            <a href="#chaos" class="toc-link" data-section="chaos">Chaos Engine</a>
+            <a href="#explorer" class="toc-link" data-section="explorer">API Explorer</a>
+            <a href="#contract-drift" class="toc-link" data-section="contract-drift">Contract Drift Alerts</a>
+            <a href="#health-monitor" class="toc-link" data-section="health-monitor">Health Monitor</a>
+
+            <div class="toc-label">Exports & Integrations</div>
+            <a href="#type-exports" class="toc-link" data-section="type-exports">Type Exports</a>
+            <a href="#openapi" class="toc-link" data-section="openapi">OpenAPI / Swagger</a>
+
+            <div class="toc-label">Manual Control</div>
+            <a href="#manual-endpoints" class="toc-link" data-section="manual-endpoints">Manual Endpoints</a>
+            <a href="#schema-editor" class="toc-link" data-section="schema-editor">Schema Editor</a>
+        </aside>
+
+        <!-- ── Main Content ── -->
+        <main class="content">
+
+            <!-- Page Header -->
+            <div class="page-header">
+                <div class="badge">Documentation</div>
+                <h1>Evolutionary Mock<br><span style="color: var(--accent);">User Guide</span></h1>
+                <p>Everything you need to connect your API, navigate the dashboard, and get the most out of your
+                    intelligent Digital Twin.</p>
+            </div>
+
+            <!-- ── OVERVIEW ── -->
+            <section id="overview" class="doc-section">
+                <h2>Overview</h2>
+                <div class="section-divider"></div>
+                <p>
+                    Evolutionary Mock is a <strong>self-learning API proxy</strong>. It sits between your frontend and
+                    backend, observing every request and response. Over time it builds a precise behavioral model of
+                    your API — latency distributions, schema shapes, status code probabilities — and uses that model to
+                    serve high-fidelity mocks even when your real backend is offline.
+                </p>
+
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <div class="fc-icon">👁️</div>
+                        <h4>Passthrough Proxy</h4>
+                        <p>In Ghost (Proxy) mode, all traffic passes through transparently while the AI silently
+                            observes and learns.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="fc-icon">🚀</div>
+                        <h4>Mock Serving</h4>
+                        <p>In Rocket (Mock) mode, the platform serves AI-generated responses from its learned model — no
+                            real backend needed.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="fc-icon">🚨</div>
+                        <h4>Contract Drift Detection</h4>
+                        <p>Continuously monitors the API structure. Any field changes, type shifts, or removals trigger
+                            a classified alert.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="fc-icon">🩺</div>
+                        <h4>Health Scoring</h4>
+                        <p>Each endpoint receives a real-time health score (0–100) based on latency, error rate, and
+                            response size anomalies.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── QUICKSTART ── -->
+            <section id="quickstart" class="doc-section">
+                <h2>Quickstart</h2>
+                <div class="section-divider"></div>
+                <p>Get up and running in under two minutes.</p>
+
+                <ol class="steps">
+                    <li>
+                        <strong>Open the Landing Page</strong>
+                        Navigate to your deployment URL (e.g. <span
+                            class="inline-code">https://your-app.onrender.com</span>). You'll see the setup panel.
+                    </li>
+                    <li>
+                        <strong>Enter Your Backend URL</strong>
+                        Paste the base URL of the API you want to observe into the <em>Connect Your API</em> box and
+                        click <strong>CONNECT</strong>. Example: <span
+                            class="inline-code">https://api.example.com</span>
+                    </li>
+                    <li>
+                        <strong>Update Your Frontend</strong>
+                        Replace your original API base URL with the Proxy URL shown on the landing page (which is just
+                        the root of this deployment). All requests now flow through the platform.
+                    </li>
+                    <li>
+                        <strong>Send Traffic</strong>
+                        Use your frontend app as normal. Every request is observed and learned. Check the
+                        <strong>Control Deck</strong> to see the live stream.
+                    </li>
+                    <li>
+                        <strong>Explore & Export</strong>
+                        After a few requests, visit the <strong>Explorer</strong> to inspect learned schemas, health
+                        scores, and drift alerts. Export TypeScript types from the same page.
+                    </li>
+                </ol>
+
+                <div class="callout success">
+                    <span class="callout-icon">💡</span>
+                    <span><strong>No real backend?</strong> You can use the free test API <span
+                            class="inline-code">https://httpbin.org</span> as your target to explore the platform before
+                        connecting your own service.</span>
+                </div>
+            </section>
+
+            <!-- ── PROXY SETUP ── -->
+            <section id="proxy-setup" class="doc-section">
+                <h2>Proxy Setup</h2>
+                <div class="section-divider"></div>
+                <p>
+                    The platform acts as a transparent HTTP proxy. Your frontend talks to it as if it were the real
+                    backend — the platform forwards requests, learns from responses, and returns them unchanged.
+                </p>
+
+                <h3>Changing the Proxy Target</h3>
+                <p>You can update the target URL at any time without restarting the server — either from the landing
+                    page setup panel or via the API directly:</p>
+
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyCode(this)">COPY</button>
+                    <span class="comment"># Using curl:</span>
+                    <span class="cmd">curl</span> -X POST <span
+                        class="url">https://your-app.onrender.com/admin/target</span> \
+                    -H <span class="key">"Content-Type: application/json"</span> \
+                    -d <span class="key">'{"target_url": "https://api.example.com"}'</span>
+                </div>
+
+                <h3>Updating Your Frontend</h3>
+                <p>Make a one-line change in your frontend code. Replace your API base URL with the platform's URL:</p>
+
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyCode(this)">COPY</button>
+                    <span class="comment">// Before</span>
+                    const API_BASE = <span class="key">"https://api.example.com"</span>;
+
+                    <span class="comment">// After — point to the Evolutionary Mock platform</span>
+                    const API_BASE = <span class="key">"https://your-app.onrender.com"</span>;
+                </div>
+
+                <div class="callout info">
+                    <span class="callout-icon">ℹ️</span>
+                    <span>The proxy preserves all headers, query parameters, request bodies, and HTTP methods.
+                        Authenticated APIs work normally — the platform passes credentials through untouched.</span>
+                </div>
+
+                <h3>CORS Considerations</h3>
+                <p>
+                    If your frontend is running on a different origin (e.g., <span
+                        class="inline-code">localhost:3000</span>) and the platform is deployed remotely, ensure the
+                    platform's CORS policy allows your frontend's origin. The platform already allows all origins by
+                    default in development mode.
+                </p>
+            </section>
+
+            <!-- ── LOCALHOST & NGROK ── -->
+            <section id="localhost" class="doc-section">
+                <h2>Using with Localhost & ngrok</h2>
+                <div class="section-divider"></div>
+                <p>
+                    The platform is deployed on a remote server (e.g. Render), which means it <strong>cannot reach your
+                        <span class="inline-code">localhost</span> directly</strong>. To proxy a locally running
+                    backend, you need to expose it to the internet using a tunneling tool.
+                    <a href="https://ngrok.com" target="_blank" style="color: var(--accent);">ngrok</a> is the
+                    recommended solution — it's free, takes 30 seconds to set up, and gives you a public HTTPS URL for
+                    your local server.
+                </p>
+
+                <div class="callout warning">
+                    <span class="callout-icon">⚠️</span>
+                    <span>The platform runs on a remote server. Addresses like <span
+                            class="inline-code">http://localhost:8000</span> or <span
+                            class="inline-code">http://127.0.0.1</span> refer to <em>that remote server's</em> localhost
+                        — not yours. You must use a tunnel.</span>
+                </div>
+
+                <h3>Step 1 — Install ngrok</h3>
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyCode(this)">COPY</button>
+                    <span class="comment"># macOS (Homebrew)</span>
+                    <span class="cmd">brew install ngrok</span>
+
+                    <span class="comment"># Windows (Chocolatey)</span>
+                    <span class="cmd">choco install ngrok</span>
+
+                    <span class="comment"># Or download directly from ngrok.com/download</span>
+                </div>
+
+                <h3>Step 2 — Sign Up & Set Auth Token (Free)</h3>
+                <p>Create a free ngrok account at <a href="https://ngrok.com" target="_blank"
+                        style="color: var(--accent);">ngrok.com</a>. Then authenticate your local CLI (one-time setup):
+                </p>
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyCode(this)">COPY</button>
+                    <span class="cmd">ngrok config add-authtoken</span> <span class="key">YOUR_AUTHTOKEN_HERE</span>
+                </div>
+
+                <h3>Step 3 — Expose Your Local Backend</h3>
+                <p>Start your local API server, then run ngrok to tunnel it. Replace <span
+                        class="inline-code">8000</span> with your actual port:</p>
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyCode(this)">COPY</button>
+                    <span class="comment"># In terminal 1: start your local API (example: FastAPI)</span>
+                    <span class="cmd">uvicorn main:app --port 8000</span>
+
+                    <span class="comment"># In terminal 2: expose port 8000 to the internet</span>
+                    <span class="cmd">ngrok http 8000</span>
+                </div>
+
+                <p>ngrok will output a public URL that looks like this:</p>
+                <div class="code-block">
+                    Forwarding <span class="url">https://a1b2-123-45-67-89.ngrok-free.app</span> → <span
+                        class="key">http://localhost:8000</span>
+                </div>
+
+                <h3>Step 4 — Connect the Platform to Your Tunnel</h3>
+                <p>Copy the <span class="inline-code">https://</span> ngrok URL and paste it into the <strong>Connect
+                        Your API</strong> box on the landing page, then click <strong>CONNECT</strong>.</p>
+
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyCode(this)">COPY</button>
+                    <span class="comment"># Your target URL should be the ngrok HTTPS URL, NOT localhost</span>
+                    target_url = <span class="key">"https://a1b2-123-45-67-89.ngrok-free.app"</span> <span
+                        class="comment"># ✅ Correct</span>
+                    target_url = <span class="key">"http://localhost:8000"</span> <span class="comment"># ❌ Won't work
+                        from remote</span>
+                </div>
+
+                <div class="callout success">
+                    <span class="callout-icon">✅</span>
+                    <span><strong>That's it!</strong> The platform will now proxy all traffic through ngrok to your
+                        local backend. You'll see requests appearing in real-time in the Control Deck.</span>
+                </div>
+
+                <h3>ngrok Free Tier Limits</h3>
+                <table class="doc-table">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th>Free Tier</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Tunnels</td>
+                            <td>1 simultaneous</td>
+                            <td>Sufficient for development</td>
+                        </tr>
+                        <tr>
+                            <td>Requests/min</td>
+                            <td>40 RPM</td>
+                            <td>More than enough for learning</td>
+                        </tr>
+                        <tr>
+                            <td>Session duration</td>
+                            <td>2 hours (without auth token)</td>
+                            <td>Unlimited with free account</td>
+                        </tr>
+                        <tr>
+                            <td>HTTPS</td>
+                            <td>✅ Included</td>
+                            <td>Always use the <span class="inline-code">https://</span> URL</td>
+                        </tr>
+                        <tr>
+                            <td>Custom domains</td>
+                            <td>❌ Not included</td>
+                            <td>URL changes each session on free tier</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="callout warning">
+                    <span class="callout-icon">⚠️</span>
+                    <span>On the free tier, your ngrok URL <strong>changes each time</strong> you restart ngrok.
+                        Remember to update the target URL in the platform's setup panel whenever this happens.</span>
+                </div>
+
+                <h3>Alternative: Cloudflare Tunnel (Free, Persistent)</h3>
+                <p>For a stable public URL that doesn't change, <a
+                        href="https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/"
+                        target="_blank" style="color: var(--accent);">Cloudflare Tunnel</a> (formerly Argo Tunnel) is an
+                    excellent free alternative with a persistent subdomain:</p>
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyCode(this)">COPY</button>
+                    <span class="comment"># Install cloudflared</span>
+                    <span class="cmd">brew install cloudflared</span>
+
+                    <span class="comment"># Start a quick tunnel (no login required for testing)</span>
+                    <span class="cmd">cloudflared tunnel --url http://localhost:8000</span>
+                </div>
+            </section>
+
+            <!-- ── CONTROL DECK ── -->
+            <section id="control-deck" class="doc-section">
+                <h2>Control Deck</h2>
+                <div class="section-divider"></div>
+                <p>
+                    The Control Deck at <a href="/admin/dashboard" style="color: var(--accent);">/admin/dashboard</a> is
+                    your main operational interface. It provides real-time visibility into every request flowing through
+                    the platform.
+                </p>
+
+                <h3>Live Stream</h3>
+                <p>The right panel shows a real-time table of every request processed. Updates arrive via
+                    <strong>WebSocket</strong> — there is no polling delay. Each row shows:
+                </p>
+                <table class="doc-table">
+                    <thead>
+                        <tr>
+                            <th>Column</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Time</strong></td>
+                            <td>Timestamp of the request (localized to your browser timezone)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Type</strong></td>
+                            <td><span class="tag tag-info">AI</span> for Mock responses, <span class="tag tag-info"
+                                    style="background:rgba(92,184,92,0.1);color:#5cb85c;border-color:rgba(92,184,92,0.25);">REAL</span>
+                                for proxied traffic</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Request</strong></td>
+                            <td>HTTP method and path pattern</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Status</strong></td>
+                            <td>HTTP response code (green = 2xx, red = errors)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Latency</strong></td>
+                            <td>Round-trip time in milliseconds</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Health</strong></td>
+                            <td>🟢 Healthy · 🟡 Degraded · 🔴 Critical</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Drift</strong></td>
+                            <td>🚨 icon appears if a contract drift was detected on this response</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Real-time Latency Chart</h3>
+                <p>The chart above the log stream plots latency over time, with separate lines for Mock (purple) and
+                    Real/Proxy (green) traffic. It maintains the last 30 data points.</p>
+
+                <h3>AI Brain Inspector</h3>
+                <p>Select any endpoint from the dropdown in the left panel to inspect the schemas the platform has
+                    learned. Switch between:</p>
+                <ul>
+                    <li><strong>Inbound (Request)</strong> — the JSON body structure sent to this endpoint</li>
+                    <li><strong>Outbound (Response)</strong> — the JSON response shape the platform uses to generate
+                        mocks</li>
+                </ul>
+                <p>You can edit these schemas directly and click <strong>Update Knowledge</strong> to override what the
+                    platform has learned — useful for correcting edge cases or seeding schemas before traffic arrives.
+                </p>
+
+                <h3>Test Console</h3>
+                <p>Use the <strong>Rocket Fire (Mock)</strong> and <strong>Ghost Fire (Proxy)</strong> buttons to
+                    manually trigger requests to a selected endpoint — useful for verifying mock fidelity without
+                    needing your frontend.</p>
+            </section>
+
+            <!-- ── LEARNING & MOCK MODE ── -->
+            <section id="learning-mode" class="doc-section">
+                <h2>Learning & Mock Modes</h2>
+                <div class="section-divider"></div>
+
+                <h3>Ghost Mode (Proxy)</h3>
+                <p>The default operating mode. Every request is forwarded to your real backend and the response is
+                    returned normally. In parallel, the platform learns:</p>
+                <ul>
+                    <li>Request and response JSON schemas (with nested field detection)</li>
+                    <li>Latency distribution (mean, standard deviation)</li>
+                    <li>Status code probability distribution</li>
+                    <li>Response body size distribution</li>
+                </ul>
+
+                <h3>Rocket Mode (Mock)</h3>
+                <p>Switch to mock mode via the Control Deck when you want to serve AI-generated responses instead of
+                    hitting your real backend. Useful when:</p>
+                <ul>
+                    <li>Your backend is unavailable or under maintenance</li>
+                    <li>You want deterministic responses for frontend testing</li>
+                    <li>You're testing against a specific response shape</li>
+                </ul>
+                <div class="callout info">
+                    <span class="callout-icon">ℹ️</span>
+                    <span>You need at least <strong>a few real requests</strong> before Mock Mode produces meaningful
+                        responses. The platform needs traffic to learn from before it can generate accurate
+                        mocks.</span>
+                </div>
+
+                <h3>Global Learning Toggle</h3>
+                <p>The <strong>Global Learning</strong> toggle in the Control Deck pauses schema learning while allowing
+                    traffic to continue flowing through. Use this when you want the proxy to stop updating its model —
+                    for example, during a known degraded state of your backend.</p>
+            </section>
+
+            <!-- ── CHAOS ENGINE ── -->
+            <section id="chaos" class="doc-section">
+                <h2>Chaos Engine</h2>
+                <div class="section-divider"></div>
+                <p>
+                    The Chaos Engine injects artificial failure scenarios into your traffic to test how resilient your
+                    frontend is. There are two controls:
+                </p>
+
+                <h3>Failure Rate Slider</h3>
+                <p>Sets the probability (0–100%) that any given request returns an error instead of a real response. At
+                    50%, roughly half of all requests will fail with an error code.</p>
+
+                <h3>Incident Profiles</h3>
+                <p>Pre-configured chaos scenarios that combine failure rate, latency injection, and error types.
+                    Available profiles include:</p>
+                <table class="doc-table">
+                    <thead>
+                        <tr>
+                            <th>Profile</th>
+                            <th>Behavior</th>
+                            <th>Use Case</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Normal</strong></td>
+                            <td>No chaos applied</td>
+                            <td>Standard traffic observation</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Degraded</strong></td>
+                            <td>Moderate latency added, some errors</td>
+                            <td>Simulate a struggling backend</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Outage</strong></td>
+                            <td>High failure rate, long delays</td>
+                            <td>Test frontend offline handling / fallback UI</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Flaky</strong></td>
+                            <td>Random intermittent failures</td>
+                            <td>Test retry logic and error recovery</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="callout danger">
+                    <span class="callout-icon">🔴</span>
+                    <span>Chaos settings apply globally across all endpoints. Remember to reset the profile to
+                        <strong>Normal</strong> before resuming normal development.</span>
+                </div>
+            </section>
+
+            <!-- ── EXPLORER ── -->
+            <section id="explorer" class="doc-section">
+                <h2>API Explorer</h2>
+                <div class="section-divider"></div>
+                <p>
+                    The Explorer at <a href="/admin/explorer" style="color: var(--accent);">/admin/explorer</a> gives
+                    you a structured view of every endpoint the platform has discovered. It updates automatically (every
+                    30 seconds with Live Sync enabled) and supports search and pagination for large APIs.
+                </p>
+
+                <h3>Endpoint Cards</h3>
+                <p>Each card shows:</p>
+                <ul>
+                    <li><strong>Method badge</strong> — GET, POST, PUT, PATCH, DELETE</li>
+                    <li><strong>Path pattern</strong> — dynamic segments are normalized (e.g. <span
+                            class="inline-code">/users/{id}</span>)</li>
+                    <li><strong>Health score</strong> — 0–100 with colour coding</li>
+                    <li><strong>Average latency</strong> and <strong>error rate</strong></li>
+                    <li><strong>Status code distribution</strong> (e.g. <em>200 (87%), 404 (13%)</em>)</li>
+                    <li><strong>Learned schemas</strong> — request and response bodies side by side</li>
+                    <li><strong>Active drift alerts</strong> with AI narration (if any)</li>
+                </ul>
+
+                <h3>Search</h3>
+                <p>Use the search bar to filter endpoints by path pattern. The filter is applied server-side and
+                    supports partial matches (e.g., search <span class="inline-code">user</span> to find <span
+                        class="inline-code">/users</span>, <span class="inline-code">/users/{id}</span>, <span
+                        class="inline-code">/admin/users</span>, etc.).</p>
+
+                <h3>Path Intelligence</h3>
+                <p>The platform automatically groups requests with dynamic path segments. For example, <span
+                        class="inline-code">/users/123</span>, <span class="inline-code">/users/456</span>, and <span
+                        class="inline-code">/users/abc</span> are all grouped under the single pattern <span
+                        class="inline-code">/users/{id}</span>.</p>
+            </section>
+
+            <!-- ── CONTRACT DRIFT ── -->
+            <section id="contract-drift" class="doc-section">
+                <h2>Contract Drift Alerts</h2>
+                <div class="section-divider"></div>
+                <p>
+                    Contract drift occurs when your backend API changes its response shape without a corresponding
+                    frontend update — a leading cause of silent runtime bugs. The platform detects this automatically by
+                    continuously comparing live responses against the learned schema baseline.
+                </p>
+
+                <h3>Drift Severity Levels</h3>
+                <p>Each detected change is classified into one of three severity tiers:</p>
+                <div style="margin: 20px 0;">
+                    <div
+                        style="padding: 14px 18px; background: rgba(255,71,87,0.06); border: 1px solid rgba(255,71,87,0.15); border-radius: 10px; margin-bottom: 10px;">
+                        <span class="tag tag-break">BREAKING</span>
+                        <span style="font-size: 14px; color: var(--text-dim); margin-left: 8px;">Required fields
+                            removed, type changed (e.g. string → number), nested object restructured</span>
+                    </div>
+                    <div
+                        style="padding: 14px 18px; background: rgba(240,173,78,0.06); border: 1px solid rgba(240,173,78,0.15); border-radius: 10px; margin-bottom: 10px;">
+                        <span class="tag tag-warn">WARNING</span>
+                        <span style="font-size: 14px; color: var(--text-dim); margin-left: 8px;">Optional fields
+                            removed, null values introduced where previously absent</span>
+                    </div>
+                    <div
+                        style="padding: 14px 18px; background: rgba(164,142,255,0.06); border: 1px solid rgba(164,142,255,0.15); border-radius: 10px;">
+                        <span class="tag tag-info">INFO</span>
+                        <span style="font-size: 14px; color: var(--text-dim); margin-left: 8px;">New optional fields
+                            added, response body expanded</span>
+                    </div>
+                </div>
+
+                <h3>AI Narrator Report</h3>
+                <p>Each drift alert includes a human-readable <strong>AI Narrator Report</strong> that describes exactly
+                    what changed, in plain language — what was removed, what type shifted, and what the likely impact
+                    is. Toggle to <strong>Technical Details</strong> view to see the raw field paths and diff.</p>
+
+                <h3>Resolving an Alert</h3>
+                <p>Once you've reviewed a drift alert and updated your frontend accordingly, click
+                    <strong>Resolve</strong> on the alert card in the Explorer. This marks the alert as resolved and
+                    updates the schema baseline to the new structure, so future comparisons use the current shape.
+                </p>
+
+                <div class="callout info">
+                    <span class="callout-icon">ℹ️</span>
+                    <span>Only the <strong>most recent unresolved alert</strong> per endpoint is shown in the Explorer.
+                        Historical alerts are retained in the database for audit purposes.</span>
+                </div>
+            </section>
+
+            <!-- ── HEALTH MONITOR ── -->
+            <section id="health-monitor" class="doc-section">
+                <h2>Health Monitor</h2>
+                <div class="section-divider"></div>
+                <p>
+                    Every endpoint is continuously scored on a <strong>0–100 health scale</strong> using a sliding
+                    window of recent observations. The score reflects how far the current behaviour deviates from the
+                    learned baseline.
+                </p>
+
+                <h3>Health Score Bands</h3>
+                <table class="doc-table">
+                    <thead>
+                        <tr>
+                            <th>Score</th>
+                            <th>Status</th>
+                            <th>Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>80 – 100</td>
+                            <td>🟢 Healthy</td>
+                            <td>All metrics within normal learned baselines</td>
+                        </tr>
+                        <tr>
+                            <td>50 – 79</td>
+                            <td>🟡 Degraded</td>
+                            <td>One or more anomalies detected — review recommended</td>
+                        </tr>
+                        <tr>
+                            <td>0 – 49</td>
+                            <td>🔴 Critical</td>
+                            <td>Multiple severe anomalies — immediate attention required</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>What Is Monitored</h3>
+                <p>The platform monitors four signals per endpoint, each compared to a statistically-derived baseline:
+                </p>
+                <ul>
+                    <li><strong>Latency</strong> — spikes beyond 2σ from the learned mean are flagged as anomalies</li>
+                    <li><strong>Error Rate</strong> — jumps above 3× the baseline error rate trigger a warning</li>
+                    <li><strong>Response Size</strong> — changes beyond 3× the average response size are flagged</li>
+                    <li><strong>Contract Drift</strong> — an active unresolved drift alert contributes negatively to the
+                        health score</li>
+                </ul>
+
+                <h3>Platform Health Banner</h3>
+                <p>The Control Deck shows an aggregated <strong>Platform Health</strong> banner at the top — the lowest
+                    health score across all monitored endpoints. If any endpoint is critical, the banner turns red to
+                    draw your attention immediately.</p>
+            </section>
+
+            <!-- ── TYPE EXPORTS ── -->
+            <section id="type-exports" class="doc-section">
+                <h2>Type Exports</h2>
+                <div class="section-divider"></div>
+                <p>
+                    The Explorer page allows you to export your learned API schemas as ready-to-use type definitions —
+                    eliminating the need to hand-write types for existing endpoints.
+                </p>
+
+                <h3>Supported Formats</h3>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <div class="fc-icon">🟦</div>
+                        <h4>TypeScript</h4>
+                        <p>Generates <span class="inline-code">interface</span> definitions for every learned endpoint
+                            response, ready to paste into your frontend project.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="fc-icon">🐍</div>
+                        <h4>Pydantic</h4>
+                        <p>Generates Python <span class="inline-code">BaseModel</span> classes for use in FastAPI, data
+                            validation pipelines, or test fixtures.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="fc-icon">📄</div>
+                        <h4>JSON Schema</h4>
+                        <p>Generates standard JSON Schema definitions, compatible with any language or validation
+                            library that supports the spec.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="fc-icon">📋</div>
+                        <h4>Copy & Download</h4>
+                        <p>One-click copy to clipboard or download as a file (<span class="inline-code">.ts</span>,
+                            <span class="inline-code">.py</span>, <span class="inline-code">.json</span>) for immediate
+                            use.
+                        </p>
+                    </div>
+                </div>
+
+                <p>Open the <strong>Export Client Types</strong> panel at the top of the Explorer page, select a format,
+                    and click generate. The output reflects every endpoint currently in the platform's knowledge base.
+                </p>
+            </section>
+
+            <!-- ── OPENAPI ── -->
+            <section id="openapi" class="doc-section">
+                <h2>OpenAPI / Swagger</h2>
+                <div class="section-divider"></div>
+                <p>
+                    The platform generates a live <strong>OpenAPI 3.0 specification</strong> from its learned traffic,
+                    and exposes an interactive Swagger UI you can use to browse and test endpoints.
+                </p>
+
+                <ul>
+                    <li><strong>Swagger UI</strong> — <a href="/admin/docs" target="_blank"
+                            style="color: var(--accent);">/admin/docs</a></li>
+                    <li><strong>Raw OpenAPI JSON</strong> — <a href="/admin/export-openapi" target="_blank"
+                            style="color: var(--accent);">/admin/export-openapi</a></li>
+                </ul>
+
+                <p>The generated spec includes:</p>
+                <ul>
+                    <li>All discovered endpoint paths and their HTTP methods</li>
+                    <li>Path parameter detection (e.g. <span class="inline-code">{id}</span>, <span
+                            class="inline-code">{slug}</span>)</li>
+                    <li>Example request and response bodies from real traffic</li>
+                    <li>Status code distributions with probabilities as descriptions</li>
+                </ul>
+
+                <div class="callout info">
+                    <span class="callout-icon">ℹ️</span>
+                    <span>The spec is generated dynamically — it reflects the latest learned state each time it's
+                        fetched. Import the URL directly into Postman, Insomnia, or any OpenAPI-compatible tool.</span>
+                </div>
+            </section>
+
+            <!-- ── MANUAL ENDPOINTS ── -->
+            <section id="manual-endpoints" class="doc-section">
+                <h2>Manual Endpoint Definition</h2>
+                <div class="section-divider"></div>
+                <p>
+                    You can seed the platform with endpoints before any real traffic arrives. This is useful when your
+                    backend isn't ready yet but you want to develop your frontend against a contract.
+                </p>
+
+                <h3>Using the Landing Page Form</h3>
+                <p>On the landing page, scroll to <strong>Define Endpoints Manually</strong>. Select an HTTP method,
+                    enter the path (using <span class="inline-code">{param}</span> notation for dynamic segments), and
+                    paste a sample JSON response body. Click <strong>+ Add Endpoint</strong>.</p>
+
+                <h3>Via the API</h3>
+                <div class="code-block">
+                    <button class="copy-btn" onclick="copyCode(this)">COPY</button>
+                    <span class="cmd">curl</span> -X POST <span
+                        class="url">https://your-app.onrender.com/admin/endpoints/manual</span> \
+                    -H <span class="key">"Content-Type: application/json"</span> \
+                    -d <span class="key">'{
+                        "method": "GET",
+                        "path": "/users/{id}",
+                        "status_code": 200,
+                        "response_body": {
+                        "id": 1,
+                        "name": "Jane Doe",
+                        "email": "jane@example.com",
+                        "role": "admin"
+                        }
+                        }'</span>
+                </div>
+
+                <p>Once defined, the endpoint immediately appears in the Explorer and is available for mock serving in
+                    Rocket Mode.</p>
+            </section>
+
+            <!-- ── SCHEMA EDITOR ── -->
+            <section id="schema-editor" class="doc-section">
+                <h2>Schema Editor</h2>
+                <div class="section-divider"></div>
+                <p>
+                    The <strong>AI Brain Inspector</strong> in the Control Deck is a live schema editor. You can
+                    directly modify what the platform has learned for any endpoint — useful for correcting AI inferences
+                    or handling edge cases.
+                </p>
+
+                <ol class="steps">
+                    <li>
+                        <strong>Select an Endpoint</strong>
+                        Use the dropdown in the left panel of the Control Deck to select the endpoint you want to edit.
+                    </li>
+                    <li>
+                        <strong>Choose Schema Type</strong>
+                        Toggle between <em>Inbound (Request)</em> and <em>Outbound (Response)</em> using the tab
+                        selector.
+                    </li>
+                    <li>
+                        <strong>Edit the JSON</strong>
+                        The textarea loads the current learned schema as editable JSON. Modify fields, add properties,
+                        or restructure as needed.
+                    </li>
+                    <li>
+                        <strong>Save</strong>
+                        Click <strong>Update Knowledge</strong>. The platform immediately uses the updated schema for
+                        future mock responses.
+                    </li>
+                </ol>
+
+                <div class="callout warning">
+                    <span class="callout-icon">⚠️</span>
+                    <span>Schema edits are overwritten if new real traffic arrives while Global Learning is enabled.
+                        Disable learning before editing if you want your manual changes to persist.</span>
+                </div>
+
+                <br>
+                <a href="#" class="back-top" onclick="window.scrollTo({top:0,behavior:'smooth'}); return false;">↑ Back
+                    to top</a>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        // ── Active TOC link on scroll ──
+        const sections = document.querySelectorAll('.doc-section');
+        const tocLinks = document.querySelectorAll('.toc-link[data-section]');
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    tocLinks.forEach(l => l.classList.remove('active'));
+                    const active = document.querySelector(`.toc-link[data-section="${entry.target.id}"]`);
+                    if (active) active.classList.add('active');
+                }
+            });
+        }, { rootMargin: '-20% 0px -60% 0px' });
+
+        sections.forEach(s => observer.observe(s));
+
+        // ── Smooth scroll for sidebar links ──
+        document.querySelectorAll('.toc-link, .toc-sub').forEach(link => {
+            link.addEventListener('click', e => {
+                const href = link.getAttribute('href');
+                if (href && href.startsWith('#')) {
+                    e.preventDefault();
+                    document.querySelector(href)?.scrollIntoView({ behavior: 'smooth' });
+                }
+            });
+        });
+
+        // ── Copy code blocks ──
+        function copyCode(btn) {
+            const block = btn.closest('.code-block');
+            // Get text content excluding the button
+            const clone = block.cloneNode(true);
+            clone.querySelector('.copy-btn')?.remove();
+            const text = clone.innerText.trim();
+            navigator.clipboard.writeText(text).then(() => {
+                btn.textContent = '✓ COPIED';
+                btn.style.color = '#5cb85c';
+                btn.style.borderColor = 'rgba(92,184,92,0.4)';
+                setTimeout(() => {
+                    btn.textContent = 'COPY';
+                    btn.style.color = '';
+                    btn.style.borderColor = '';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+
+</html>
