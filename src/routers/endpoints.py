@@ -7,7 +7,7 @@ CRUD and management for learned endpoints: list, stats, chaos config, schema upd
 import re
 from typing import Dict, Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm.attributes import flag_modified
@@ -16,11 +16,12 @@ from core.database import AsyncSessionLocal
 from core.models import Endpoint, EndpointBehavior, ChaosConfig
 from utils.normalization import normalize_path
 from utils.schema_learner import learn_schema
+from core.auth import require_auth
 
 router = APIRouter()
 
 
-@router.post("/admin/endpoints/manual")
+@router.post("/admin/endpoints/manual", dependencies=[Depends(require_auth)])
 async def create_manual_endpoint(request: Request):
     """
     Manually define an endpoint spec when the real backend isn't built yet.
@@ -100,7 +101,7 @@ async def create_manual_endpoint(request: Request):
             return {"status": "created", "id": endpoint.id, "method": method, "path": normalized}
 
 
-@router.get("/admin/endpoints")
+@router.get("/admin/endpoints", dependencies=[Depends(require_auth)])
 async def list_endpoints():
     async with AsyncSessionLocal() as session:
         res = await session.execute(select(Endpoint))
@@ -108,7 +109,7 @@ async def list_endpoints():
         return endpoints
 
 
-@router.get("/admin/endpoints/{endpoint_id}/stats")
+@router.get("/admin/endpoints/{endpoint_id}/stats", dependencies=[Depends(require_auth)])
 async def get_endpoint_stats(endpoint_id: int):
     async with AsyncSessionLocal() as session:
         b_res = await session.execute(select(EndpointBehavior).where(EndpointBehavior.endpoint_id == endpoint_id))
@@ -151,7 +152,7 @@ async def get_endpoint_stats(endpoint_id: int):
         }
 
 
-@router.post("/admin/endpoints/{endpoint_id}/chaos")
+@router.post("/admin/endpoints/{endpoint_id}/chaos", dependencies=[Depends(require_auth)])
 async def configure_chaos(endpoint_id: int, config: Dict[str, Any]):
     async with AsyncSessionLocal() as session:
         await session.execute(
@@ -166,7 +167,7 @@ async def configure_chaos(endpoint_id: int, config: Dict[str, Any]):
         return {"status": "updated"}
 
 
-@router.post("/admin/endpoints/{endpoint_id}/schema")
+@router.post("/admin/endpoints/{endpoint_id}/schema", dependencies=[Depends(require_auth)])
 async def update_endpoint_schema(endpoint_id: int, data: Dict[str, Any]):
     schema = data.get("schema")
     schema_type = data.get("type", "outbound")  # 'inbound' or 'outbound'

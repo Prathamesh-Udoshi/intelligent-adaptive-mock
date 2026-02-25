@@ -6,18 +6,19 @@ Consolidated endpoint for the Explorer page with pagination, search, and health.
 
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import select, text
 
 from core.database import AsyncSessionLocal
 from core.state import health_monitor
 from core.models import Endpoint, EndpointBehavior, ContractDrift
 from utils.drift_detector import narrate_drift
+from core.auth import require_auth
 
 router = APIRouter()
 
 
-@router.get("/admin/explorer/overview")
+@router.get("/admin/explorer/overview", dependencies=[Depends(require_auth)])
 async def get_explorer_overview(search: Optional[str] = None, limit: int = 10, offset: int = 0):
     """
     Consolidated endpoint for the Explorer page with pagination and search.

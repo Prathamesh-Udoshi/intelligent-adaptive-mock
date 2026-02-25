@@ -4,18 +4,19 @@ Health Router
 AI anomaly detection health monitoring endpoints.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from sqlalchemy import select
 
 from core.database import AsyncSessionLocal
 from core.state import health_monitor, adaptive_detector
 from core.models import HealthMetric
+from core.auth import require_auth
 
 router = APIRouter()
 
 
-@router.get("/admin/health")
+@router.get("/admin/health", dependencies=[Depends(require_auth)])
 async def get_all_health():
     """
     Returns health data for all monitored endpoints.
@@ -26,7 +27,7 @@ async def get_all_health():
     }
 
 
-@router.get("/admin/health/global")
+@router.get("/admin/health/global", dependencies=[Depends(require_auth)])
 async def get_global_health():
     """
     Returns the aggregated platform health score.
@@ -34,7 +35,7 @@ async def get_global_health():
     return health_monitor.get_global_health()
 
 
-@router.get("/admin/health/{endpoint_id}")
+@router.get("/admin/health/{endpoint_id}", dependencies=[Depends(require_auth)])
 async def get_endpoint_health(endpoint_id: int):
     """
     Returns health data for a specific endpoint.
@@ -68,7 +69,7 @@ async def get_endpoint_health(endpoint_id: int):
     }
 
 
-@router.post("/admin/detector/reset/{path:path}")
+@router.post("/admin/detector/reset/{path:path}", dependencies=[Depends(require_auth)])
 async def reset_endpoint_stats(path: str):
     """
     Resets the learned latency baseline for a single endpoint.
@@ -94,7 +95,7 @@ async def reset_endpoint_stats(path: str):
     }
 
 
-@router.post("/admin/detector/reset-all")
+@router.post("/admin/detector/reset-all", dependencies=[Depends(require_auth)])
 async def reset_all_stats():
     """
     Wipes ALL learned latency baselines across every endpoint.

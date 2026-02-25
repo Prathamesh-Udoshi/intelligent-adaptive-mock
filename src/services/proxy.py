@@ -41,6 +41,22 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
     method = request.method
     normalized = normalize_path(f"/{path}")
 
+    # ── Guard 1: Never proxy or learn /admin/* paths ──────────────────────────
+    # Admin routes that don't match a named handler (e.g. GET to a POST-only
+    # admin endpoint) must 404 cleanly — not fall through to the proxy and get
+    # stored as learned endpoints.
+    if normalized.startswith("/admin/"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    # ── Guard 2: Refuse to proxy when no target is configured ─────────────────
+    # If TARGET_URL is empty the platform is not set up.  Random browser
+    # navigation would otherwise create garbage endpoint rows in the database.
+    if not state.TARGET_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="No target URL configured. Sign in to the console and set one.",
+        )
+
     # Mode Selection: Header > Global State
     mock_header = request.headers.get("X-Mock-Enabled")
     if mock_header:
@@ -67,6 +83,7 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
     # 1. MOCK MODE (Explicit)
     if mock_enabled:
         return await generate_endpoint_mock(behavior, chaos, normalized, request)
+
 
     # 2. PROXY MODE (With Automatic Mock Fallback)
     target_full_url = f"{state.TARGET_URL}/{path}"

@@ -7,7 +7,7 @@ recent logs, and WebSocket endpoint.
 
 import os
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy import update
 
@@ -16,6 +16,7 @@ import core.state as state
 from core.state import PLATFORM_STATE, CHAOS_PROFILES, RECENT_LOGS, logs_lock
 from core.websocket import manager
 from core.models import ChaosConfig, Endpoint, EndpointBehavior
+from core.auth import require_auth, require_auth_ws
 import re
 
 router = APIRouter()
@@ -89,13 +90,79 @@ async def get_login():
 
 
 @router.get("/admin/swagger-ui")
-async def get_internal_swagger():
-    from fastapi.openapi.docs import get_swagger_ui_html
-    return get_swagger_ui_html(
-        openapi_url="/admin/export-openapi",
-        title="AI Truth Swagger",
-        swagger_favicon_url="https://fastapi.tiangolo.com/img/favicon.png"
-    )
+async def get_internal_swagger(token: str = ""):
+    """
+    Custom Swagger UI that attaches a Firebase ID token to every request,
+    including the /admin/export-openapi spec fetch.
+
+    The token is passed as ?token= by swagger_guard.html (already verified).
+    If not present, the page does its own Firebase onAuthStateChanged check.
+    """
+    from fastapi.responses import HTMLResponse
+    # Safely embed the token into the JS — it is a base64url JWT, no escaping needed.
+    safe_token = token.replace("'", "")  # strip any quotes just in case
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>AI Truth &mdash; API Docs</title>
+        <meta charset="utf-8">
+        <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+        <style>
+            body {{ margin: 0; background: #0d0d0d; }}
+            #loading {{
+                display: flex; align-items: center; justify-content: center;
+                height: 100vh; color: #aaa; font-family: 'Outfit', sans-serif; font-size: 16px;
+            }}
+        </style>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap" rel="stylesheet">
+    </head>
+    <body>
+        <div id="loading">&#x23F3; Loading API Docs&hellip;</div>
+        <div id="swagger-ui" style="display:none"></div>
+
+        <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+        <script type="module">
+            import {{ initializeApp }}       from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+            import {{ getAuth, onAuthStateChanged }}
+                                             from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+            // Token may be pre-supplied by swagger_guard.html via ?token=
+            let idToken = '{safe_token}';
+
+            function initSwagger(token) {{
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('swagger-ui').style.display = 'block';
+                SwaggerUIBundle({{
+                    url: '/admin/export-openapi',
+                    dom_id: '#swagger-ui',
+                    presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+                    layout: 'BaseLayout',
+                    deepLinking: true,
+                    requestInterceptor: (req) => {{
+                        if (token) req.headers['Authorization'] = 'Bearer ' + token;
+                        return req;
+                    }}
+                }});
+            }}
+
+            if (idToken) {{
+                // Token handed over by swagger_guard — use immediately
+                initSwagger(idToken);
+            }} else {{
+                // Fallback: do our own Firebase auth check
+                const cfg = await fetch('/api/config').then(r => r.json());
+                const auth = getAuth(initializeApp(cfg));
+                onAuthStateChanged(auth, async (user) => {{
+                    if (!user) {{ window.location.href = '/login'; return; }}
+                    initSwagger(await user.getIdToken());
+                }});
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
 
 
 @router.get("/admin/docs")
@@ -116,7 +183,7 @@ async def get_user_guide():
 
 # ── Config & State ──
 
-@router.get("/admin/config")
+@router.get("/admin/config", dependencies=[Depends(require_auth)])
 async def get_config():
     return {
         "chaos_level": 0,
@@ -127,7 +194,7 @@ async def get_config():
     }
 
 
-@router.post("/admin/target")
+@router.post("/admin/target", dependencies=[Depends(require_auth)])
 async def set_target_url(request: Request):
     """Change the proxy target URL at runtime."""
     data = await request.json()
@@ -139,12 +206,12 @@ async def set_target_url(request: Request):
     return {"status": "success", "target_url": state.TARGET_URL}
 
 
-@router.get("/admin/chaos/profiles")
+@router.get("/admin/chaos/profiles", dependencies=[Depends(require_auth)])
 async def get_chaos_profiles():
     return CHAOS_PROFILES
 
 
-@router.post("/admin/chaos/profiles")
+@router.post("/admin/chaos/profiles", dependencies=[Depends(require_auth)])
 async def set_active_chaos_profile(request: Request):
     data = await request.json()
     profile = data.get("profile", "normal")
@@ -155,7 +222,7 @@ async def set_active_chaos_profile(request: Request):
     raise HTTPException(status_code=400, detail="Invalid profile")
 
 
-@router.post("/admin/chaos")
+@router.post("/admin/chaos", dependencies=[Depends(require_auth)])
 async def set_chaos_globally(request: Request):
     data = await request.json()
     level = data.get("level", 0)
@@ -165,21 +232,21 @@ async def set_chaos_globally(request: Request):
     return {"status": "updated_globally", "level": level}
 
 
-@router.post("/admin/learning")
+@router.post("/admin/learning", dependencies=[Depends(require_auth)])
 async def toggle_learning(request: Request):
     data = await request.json()
     PLATFORM_STATE["learning_enabled"] = data.get("enabled", True)
     return {"status": "success", "learning_enabled": PLATFORM_STATE["learning_enabled"]}
 
 
-@router.post("/admin/mode")
+@router.post("/admin/mode", dependencies=[Depends(require_auth)])
 async def set_platform_mode(request: Request):
     data = await request.json()
     PLATFORM_STATE["mode"] = data.get("mode", "proxy")
     return {"status": "success", "mode": PLATFORM_STATE["mode"]}
 
 
-@router.get("/admin/logs")
+@router.get("/admin/logs", dependencies=[Depends(require_auth)])
 async def get_recent_logs():
     async with logs_lock:
         return RECENT_LOGS
@@ -188,7 +255,10 @@ async def get_recent_logs():
 # ── WebSocket ──
 
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    user: dict = Depends(require_auth_ws),
+):
     await manager.connect(websocket)
     try:
         async with logs_lock:
@@ -199,7 +269,7 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 
-@router.get("/admin/export-openapi")
+@router.get("/admin/export-openapi", dependencies=[Depends(require_auth)])
 async def export_openapi():
     async with AsyncSessionLocal() as session:
         from sqlalchemy import select

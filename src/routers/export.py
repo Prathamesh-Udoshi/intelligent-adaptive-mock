@@ -4,18 +4,19 @@ Export Router
 Type export endpoints: TypeScript, Pydantic, JSON Schema.
 """
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from core.database import AsyncSessionLocal
 from core.models import Endpoint, EndpointBehavior
 from utils.type_exporter import export_all_typescript, export_all_pydantic, export_all_json_schema
+from core.auth import require_auth
 
 router = APIRouter()
 
 
-@router.get("/admin/export-types")
+@router.get("/admin/export-types", dependencies=[Depends(require_auth)])
 async def export_types(format: str = "typescript"):
     """
     Auto-generate client type definitions from learned API schemas.

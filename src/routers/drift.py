@@ -8,18 +8,19 @@ import datetime
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, update
 
 from core.database import AsyncSessionLocal
 from core.models import ContractDrift
+from core.auth import require_auth
 
 logger = logging.getLogger("mock_platform")
 
 router = APIRouter()
 
 
-@router.get("/admin/drift-alerts")
+@router.get("/admin/drift-alerts", dependencies=[Depends(require_auth)])
 async def get_drift_alerts(endpoint_id: Optional[int] = None, unresolved_only: bool = False):
     """
     Get all drift alerts, optionally filtered by endpoint or resolution status.
@@ -48,7 +49,7 @@ async def get_drift_alerts(endpoint_id: Optional[int] = None, unresolved_only: b
         } for alert in alerts]
 
 
-@router.post("/admin/drift-alerts/{alert_id}/resolve")
+@router.post("/admin/drift-alerts/{alert_id}/resolve", dependencies=[Depends(require_auth)])
 async def resolve_drift_alert(alert_id: int):
     """
     Mark a drift alert as resolved.
@@ -76,7 +77,7 @@ async def resolve_drift_alert(alert_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/admin/endpoints/{endpoint_id}/drift-stats")
+@router.get("/admin/endpoints/{endpoint_id}/drift-stats", dependencies=[Depends(require_auth)])
 async def get_endpoint_drift_stats(endpoint_id: int):
     """
     Get drift statistics for a specific endpoint.
