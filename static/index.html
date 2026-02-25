@@ -407,6 +407,13 @@
                         <div style="font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: 1px;">
                             Anomalies</div>
                     </div>
+                    <div style="text-align: center; border-left: 1px solid rgba(255,255,255,0.05); padding-left: 20px;">
+                        <div id="healthSensitivity"
+                            style="font-size: 28px; font-weight: 900; color: var(--accent); font-family: 'JetBrains Mono', monospace;">
+                            3.0</div>
+                        <div style="font-size: 9px; color: #666; text-transform: uppercase; letter-spacing: 1px;">
+                            Avg AI Sensitivity (σ)</div>
+                    </div>
                 </div>
             </div>
             <!-- Mini health bar -->
@@ -467,6 +474,26 @@
                         style="width: 100%; background: #000; color: white; border: 1px solid #222; padding: 12px; border-radius: 10px; margin-bottom: 15px; font-family: 'Outfit'; font-size: 14px;">
                         <!-- Dynamically loaded -->
                     </select>
+
+                    <!-- Added Endpoint Personality section -->
+                    <div id="endpointStats"
+                        style="margin-bottom: 15px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); display: none;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span style="font-size: 10px; color: #888; text-transform: uppercase; font-weight: bold;"
+                                title="log10(mean_ms) — higher = slower endpoint">Latency Class (log₁₀)</span>
+                            <span id="epVolatility"
+                                style="font-size: 11px; color: #fff; font-family: 'JetBrains Mono';">—</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span
+                                style="font-size: 10px; color: #888; text-transform: uppercase; font-weight: bold;">Specific
+                                Sensitivity</span>
+                            <span id="epThreshold"
+                                style="font-size: 11px; color: var(--accent); font-family: 'JetBrains Mono';">3.0σ</span>
+                        </div>
+                    </div>
+
+
                     <button class="btn btn-danger" onclick="sendTestRequest()">Rocket Fire (Mock)</button>
                     <div style="margin-top: 10px;"></div>
                     <button class="btn btn-primary" onclick=" sendProxyRequest()">Ghost Fire (Proxy)</button>
@@ -687,6 +714,31 @@
                 const statsRes = await fetch(`/admin/endpoints/${id}/stats`);
                 const stats = await statsRes.json();
                 currentEndpointStats = stats;
+
+                // Update personality stats
+                const adapt = stats.behavior.adaptive_stats;
+                const statsDiv = document.getElementById("endpointStats");
+                const volatilityEl = document.getElementById("epVolatility");
+                const thresholdEl = document.getElementById("epThreshold");
+
+                if (adapt && (adapt.count > 0)) {
+                    statsDiv.style.display = 'block';
+                    if (adapt.mode === 'learning') {
+                        volatilityEl.innerText = 'Learning...';
+                        volatilityEl.style.color = 'var(--accent)';
+                        thresholdEl.innerText = `${adapt.count}/5 samples`;
+                        thresholdEl.style.color = '#888';
+                    } else {
+                        const logScale = adapt.log_mean_scale || (adapt.mean ? Math.log10(Math.max(10, adapt.mean)).toFixed(2) : '—');
+                        volatilityEl.innerText = logScale;
+                        volatilityEl.style.color = '#fff';
+                        thresholdEl.innerText = (adapt.dynamic_threshold || 3.0).toFixed(1) + 'σ';
+                        thresholdEl.style.color = 'var(--accent)';
+                    }
+                } else {
+                    statsDiv.style.display = 'none';
+                }
+
                 const epData = window.endpointData[id];
                 const method = epData ? epData.method : "GET";
                 switchSchemaTab(['POST', 'PUT', 'PATCH'].includes(method) ? 'inbound' : 'outbound');
@@ -898,6 +950,8 @@
             const anomalyEl = document.getElementById('healthAnomalies');
             anomalyEl.textContent = health.anomaly_count;
             anomalyEl.style.color = health.anomaly_count > 0 ? '#ff4757' : '#888';
+
+            document.getElementById('healthSensitivity').textContent = health.avg_sensitivity || '3.0';
 
             const bar = document.getElementById('healthBar');
             bar.style.width = score + '%';

@@ -44,9 +44,13 @@ logger = logging.getLogger("mock_platform")
 MIN_LEARNING_SAMPLES: int = 5        # Requests before anomaly detection activates.
                                      # Welford's algorithm is valid from n=3;
                                      # 5 balances speed of learning vs false positives.
-ANOMALY_Z_THRESHOLD: float = 3.0    # Z-score above which a latency is anomalous
-DECAY_FACTOR: float = 0.98           # Exponential decay weight (1.0 = no decay, 0.95 = fast decay)
-USE_DECAY: bool = True               # Toggle decay weighting for changing workloads
+ANOMALY_Z_THRESHOLD: float = 3.0    # Default fallback (used before enough data is learned)
+ADAPTIVE_Z_MIN: float = 2.0         # Floor: ultra-strict for fast endpoints (e.g. /health)
+ADAPTIVE_Z_MAX: float = 5.5         # Ceiling: lenient for slow AI/LLM endpoints
+LOG_SCALE_MIN_MS: float = 10.0      # Clamp floor for mean (below this = ultra-fast)
+LOG_SCALE_MAX_MS: float = 10000.0   # Clamp ceiling for mean (above this = extreme LLM)
+DECAY_FACTOR: float = 0.98
+USE_DECAY: bool = True
 
 # Score thresholds
 SCORE_HEALTHY: float = 80.0
@@ -166,6 +170,41 @@ class AdaptiveAnomalyDetector:
 
         return self.get_stats(endpoint)
 
+    def _get_dynamic_threshold(self, mean: float, std: float) -> float:
+        """
+        Calculates a dynamic Z-Score threshold based on the absolute mean latency
+        using logarithmic scaling.
+
+        WHY LOG-MEAN instead of CV (Coefficient of Variation):
+          CV asks "how variable is this endpoint relative to itself?" — wrong question.
+          Log-Mean asks "how slow is this endpoint by nature?" — correct question.
+
+          A /health endpoint at 5ms should NEVER jitter to 100ms → strict (2.0σ).
+          An /analyze LLM at 3000ms can freely vary by 500ms → lenient (4.5σ).
+          CV cannot capture this because a stable-but-slow endpoint gets the same
+          score as a stable-but-fast one.
+
+        Formula (linear interpolation in log10 space):
+          log_mean = log10(clamp(mean, 10ms, 10000ms))
+          Threshold = MinZ + (log_mean - 1) * (MaxZ - MinZ) / 3.0
+
+          key reference points:
+            mean=10ms   → log=1.0 → threshold=2.00σ  (ultra-strict)
+            mean=100ms  → log=2.0 → threshold=3.17σ  (normal)
+            mean=1000ms → log=3.0 → threshold=4.33σ  (lenient)
+            mean=10000ms → log=4.0 → threshold=5.50σ (very lenient, LLMs)
+        """
+        if mean <= 0:
+            return ANOMALY_Z_THRESHOLD
+
+        clamped = max(LOG_SCALE_MIN_MS, min(mean, LOG_SCALE_MAX_MS))
+        log_mean = math.log10(clamped)   # Range: 1.0 (10ms) → 4.0 (10000ms)
+
+        # Linear interpolation across 3 decades of log space
+        dynamic_z = ADAPTIVE_Z_MIN + (log_mean - 1.0) * (ADAPTIVE_Z_MAX - ADAPTIVE_Z_MIN) / 3.0
+
+        return max(ADAPTIVE_Z_MIN, min(ADAPTIVE_Z_MAX, dynamic_z))
+
     def flush(self) -> None:
         """Force an immediate save to disk. Call this on server shutdown."""
         if self._persist_path:
@@ -201,8 +240,9 @@ class AdaptiveAnomalyDetector:
         if stats["std"] <= 0:
             return False
 
+        dynamic_threshold = self._get_dynamic_threshold(stats["mean"], stats["std"])
         z_score = abs(latency - stats["mean"]) / stats["std"]
-        return z_score > ANOMALY_Z_THRESHOLD
+        return z_score > dynamic_threshold
 
     def get_z_score(self, endpoint: str, latency: float) -> float:
         """
@@ -289,19 +329,20 @@ class AdaptiveAnomalyDetector:
             }
 
         z = self.get_z_score(endpoint, latency)
-        is_anom = z > ANOMALY_Z_THRESHOLD
+        dynamic_threshold = self._get_dynamic_threshold(mean, std)
+        is_anom = z > dynamic_threshold
         score = self.get_health_score(endpoint, latency)
 
         severity = "none"
-        if z > ANOMALY_Z_THRESHOLD * 2:
+        if z > dynamic_threshold * 2:
             severity = "high"
-        elif z > ANOMALY_Z_THRESHOLD:
+        elif z > dynamic_threshold:
             severity = "medium"
 
         if is_anom:
             message = (
-                f"Latency {latency:.0f}ms is {z:.1f}σ above the learned "
-                f"baseline of {mean:.0f}ms ± {std:.0f}ms"
+                f"Latency {latency:.0f}ms is {z:.1f}σ above baseline (Threshold: {dynamic_threshold:.1f}σ). "
+                f"Baseline: {mean:.0f}ms ± {std:.0f}ms"
             )
         else:
             message = f"Latency {latency:.0f}ms is normal (baseline: {mean:.0f}ms ± {std:.0f}ms)"
@@ -309,6 +350,8 @@ class AdaptiveAnomalyDetector:
         return {
             "is_anomaly": is_anom,
             "z_score": round(z, 2),
+            "dynamic_threshold": round(dynamic_threshold, 2),
+            "log_mean_scale": round(math.log10(max(LOG_SCALE_MIN_MS, min(mean, LOG_SCALE_MAX_MS))), 2),
             "severity": severity,
             "message": message,
             "mode": "active",
@@ -342,7 +385,9 @@ class AdaptiveAnomalyDetector:
             "std": round(stats["std"], 2),
             "M2": round(stats["M2"], 4),
             "eff_count": round(stats["eff_count"], 2),
-            "mode": "active" if stats["count"] >= MIN_LEARNING_SAMPLES else "learning"
+            "mode": "active" if stats["count"] >= MIN_LEARNING_SAMPLES else "learning",
+            "samples_needed": max(0, MIN_LEARNING_SAMPLES - stats["count"]),
+            "learning_progress": round(min(1.0, stats["count"] / MIN_LEARNING_SAMPLES), 2)
         }
 
     def get_all_stats(self) -> Dict[str, Dict[str, Any]]:
@@ -365,6 +410,9 @@ class AdaptiveAnomalyDetector:
     def _load_from_disk(self, path: str) -> None:
         """Load previously learned stats from a JSON file."""
         try:
+            if os.path.getsize(path) == 0:
+                logger.info("ℹ️ Detector stats file is empty, starting fresh.")
+                return
             with open(path, "r") as f:
                 loaded = json.load(f)
                 # Restore, ensuring all keys exist (backward compatible)

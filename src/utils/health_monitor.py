@@ -133,7 +133,9 @@ class HealthMonitor:
                     "current": round(latency_ms, 1),
                     "baseline": latency_detail["mean"],
                     "z_score": latency_detail["z_score"],
-                    "threshold": round(latency_detail["mean"] + 3.0 * latency_detail["std"], 1)
+                    "threshold_z": latency_detail["dynamic_threshold"],
+                    "volatility": latency_detail["volatility"],
+                    "threshold": round(latency_detail["mean"] + latency_detail["dynamic_threshold"] * latency_detail["std"], 1)
                 })
         # Fallback: if no detector provided, use legacy window-based detection
         elif len(window) >= self.MIN_OBSERVATIONS:
@@ -307,13 +309,24 @@ class HealthMonitor:
         else:
             global_status = "critical"
         
+        # Calculate average sensitivity (Z-threshold) across all monitored endpoints
+        from core.state import adaptive_detector
+        sensitivities = []
+        for h in self._health_cache.values():
+            stats = adaptive_detector.get_stats(h.get("path_pattern", ""))
+            thresh = adaptive_detector._get_dynamic_threshold(stats.get("mean", 0), stats.get("std", 0))
+            sensitivities.append(thresh)
+        
+        avg_sensitivity = sum(sensitivities) / len(sensitivities) if sensitivities else 3.0
+
         self._global_health = {
             "score": round(global_score, 1),
             "status": global_status,
             "anomaly_count": anomaly_count,
             "endpoints_monitored": len(self._health_cache),
             "critical_endpoints": critical,
-            "degraded_endpoints": degraded
+            "degraded_endpoints": degraded,
+            "avg_sensitivity": round(avg_sensitivity, 1)
         }
 
 

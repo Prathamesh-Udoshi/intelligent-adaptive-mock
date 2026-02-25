@@ -116,8 +116,23 @@ async def get_endpoint_stats(endpoint_id: int):
         c_res = await session.execute(select(ChaosConfig).where(ChaosConfig.endpoint_id == endpoint_id))
         chaos = c_res.scalars().first()
 
-        if not behavior:
-            raise HTTPException(status_code=404, detail="Endpoint not found")
+        # Add real-time adaptive stats from the AI Brain
+        from core.state import adaptive_detector, health_monitor
+        from core.models import Endpoint
+        
+        ep_res = await session.execute(select(Endpoint).where(Endpoint.id == endpoint_id))
+        endpoint = ep_res.scalars().first()
+        
+        adaptive_stats = {}
+        if endpoint:
+            adaptive_stats = adaptive_detector.get_stats(endpoint.path_pattern)
+            # Add dynamic threshold
+            adaptive_stats["dynamic_threshold"] = adaptive_detector._get_dynamic_threshold(
+                adaptive_stats.get("mean", 0), 
+                adaptive_stats.get("std", 0)
+            )
+            
+        health = health_monitor.get_endpoint_health(endpoint_id)
 
         return {
             "behavior": {
@@ -125,7 +140,9 @@ async def get_endpoint_stats(endpoint_id: int):
                 "error_rate": behavior.error_rate,
                 "status_codes": behavior.status_code_distribution,
                 "schema_preview": behavior.response_schema,
-                "request_schema": behavior.request_schema
+                "request_schema": behavior.request_schema,
+                "adaptive_stats": adaptive_stats,
+                "health": health
             },
             "chaos": {
                 "level": chaos.chaos_level,

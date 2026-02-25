@@ -1201,12 +1201,26 @@
                 <p>The platform monitors four signals per endpoint, each compared to a statistically-derived baseline:
                 </p>
                 <ul>
-                    <li><strong>Latency</strong> — spikes beyond 2σ from the learned mean are flagged as anomalies</li>
+                    <li><strong>Latency</strong> — spikes beyond a dynamic threshold from the learned mean are flagged
+                        as anomalies</li>
                     <li><strong>Error Rate</strong> — jumps above 3× the baseline error rate trigger a warning</li>
                     <li><strong>Response Size</strong> — changes beyond 3× the average response size are flagged</li>
                     <li><strong>Contract Drift</strong> — an active unresolved drift alert contributes negatively to the
                         health score</li>
                 </ul>
+
+                <h3>Adaptive AI Thresholding</h3>
+                <p>The platform doesn't use a single "one-size-fits-all" threshold for latency. Instead, it uses the
+                    <strong>Coefficient of Variation (CV)</strong> to adjust its sensitivity per endpoint:</p>
+                <ul>
+                    <li><strong>Stable Endpoints:</strong> If an endpoint is remarkably consistent (e.g. 10ms ± 1ms),
+                        the AI becomes more sensitive, flagging even a small jump as an anomaly.</li>
+                    <li><strong>Volatile Endpoints:</strong> For jittery endpoints like LLM generations or Search APIs,
+                        the AI automatically expands its patience, reducing false alerts while still catching massive
+                        failures.</li>
+                </ul>
+                <p>You can see the current <strong>AI Sensitivity (σ)</strong> in the Control Deck — it represents the
+                    dynamic Z-score threshold the system has calculated for your current project.</p>
 
                 <h3>Platform Health Banner</h3>
                 <p>The Control Deck shows an aggregated <strong>Platform Health</strong> banner at the top — the lowest

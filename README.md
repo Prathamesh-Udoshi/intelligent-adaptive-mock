@@ -159,10 +159,16 @@ The platform continuously monitors every proxied request against learned behavio
 
 | Detector | Trigger Condition | Use Case |
 |---|---|---|
-| **Latency Spike** | Current latency > 2σ from learned mean | Detects backend slowdowns or infrastructure issues |
+| **Latency Spike** | Latency > Dynamic Threshold (Adaptive Z-Score) | Detects backend slowdowns with contextual sensitivity |
 | **Error Rate Spike** | Error rate jumps >3x from baseline in sliding window | Catches cascading failures and deployment regressions |
 | **Response Size Drift** | Response body size changes >3x from average | Detects data truncation, empty payloads, or inflated responses |
-| **Contract Drift Penalty** | Endpoint has an active unresolved drift alert | Integrates structural drift into the health score |
+| **Adaptive Volatility (CV)** | AI adjusts sensitivity based on endpoint stability | High sensitivity for stable APIs; forgiving for jittery LLM/Search APIs |
+
+### 🧠 Adaptive AI Thresholding (Z-Score Dynamic Tuning)
+
+Unlike static monitoring tools, the platform learns the **volatility** of every endpoint. It calculates the **Coefficient of Variation (CV)** to determine how much "noise" is normal:
+- **Stable Endpoints:** Threshold shrinks to **2.0σ**. Any tiny deviation is flagged as an anomaly.
+- **Volatile Endpoints (LLMs/Search):** Threshold expands up to **6.0σ**. The AI learns to stay silent during normal jitter, only alerting on massive outages.
 
 ### Health Score (0–100)
 
