@@ -6,3 +6,4 @@ httpx
 pydantic
 numpy
 websockets
+firebase-admin

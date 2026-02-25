@@ -420,7 +420,7 @@
 
             try {
                 const url = `/admin/explorer/overview?limit=${pageSize}&offset=${offset}&search=${encodeURIComponent(searchQuery)}`;
-                const res = await fetch(url);
+                const res = await authedFetch(url);
                 const data = await res.json();
 
                 totalItems = data.total;
@@ -570,7 +570,7 @@
         async function resolveAlert(alertId) {
             if (!confirm("Mark this contract drift as resolved?")) return;
             try {
-                const res = await fetch(`/admin/drift-alerts/${alertId}/resolve`, { method: 'POST' });
+                const res = await authedFetch(`/admin/drift-alerts/${alertId}/resolve`, { method: 'POST' });
                 if (res.ok) {
                     await loadEndpoints();
                 } else {
@@ -615,9 +615,22 @@
             }, 800);
         };
 
-        // Initial load
-        loadEndpoints();
-        toggleAutoRefresh(true);
+        // Auth-aware fetch wrapper
+        // All /admin/* fetch calls get the Firebase ID token attached automatically.
+        function authedFetch(url, options) {
+            options = options || {};
+            var token = window.__authToken;
+            var headers = Object.assign({}, options.headers || {});
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+            return fetch(url, Object.assign({}, options, { headers: headers }));
+        }
+
+        // Explorer init is deferred - the Firebase auth module calls
+        // window.__initExplorer() only AFTER window.__authToken is stored.
+        window.__initExplorer = function() {
+            loadEndpoints();
+            toggleAutoRefresh(true);
+        };
 
         // ── Type Export Functions ──
 
@@ -641,7 +654,7 @@
             status.textContent = '';
 
             try {
-                const resp = await fetch(`/admin/export-types?format=${format}`);
+                const resp = await authedFetch(`/admin/export-types?format=${format}`);
                 if (!resp.ok) {
                     const err = await resp.json();
                     output.textContent = `⚠️ ${err.detail || 'Export failed'}`;
@@ -706,11 +719,17 @@
                 const app = initializeApp(firebaseConfig);
                 const auth = getAuth(app);
 
-                onAuthStateChanged(auth, (user) => {
+                onAuthStateChanged(auth, async (user) => {
                     const overlay = document.getElementById('authOverlay');
                     const navUser = document.getElementById('nav-user');
 
                     if (user) {
+                        // Store token globally for authedFetch
+                        window.__authToken = await user.getIdToken();
+                        // Refresh before expiry (Firebase tokens last 1 hour)
+                        setInterval(async () => {
+                            window.__authToken = await user.getIdToken(true);
+                        }, 55 * 60 * 1000);
                         if (overlay) overlay.style.display = 'none';
                         if (navUser) {
                             navUser.style.display = "flex";
@@ -726,6 +745,8 @@
                             `;
                             document.getElementById('signOutBtn').onclick = () => signOut(auth).then(() => window.location.href = '/login');
                         }
+                        // NOW load explorer data - token is ready
+                        if (window.__initExplorer) window.__initExplorer();
                     } else {
                         window.location.href = '/login';
                     }

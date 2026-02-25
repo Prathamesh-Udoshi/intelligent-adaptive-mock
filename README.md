@@ -16,8 +16,9 @@ This platform acts as a **Digital Twin** for your API. It doesn't just mock; it 
 By sitting between your app and the real backend, it observes every request and response, building a real-time behavioral model. 
 - **Zero-Config Mocks:** Switch from "Proxy" to "Mock" mode, and the platform takes over using learned behavior.
 - **Failover-First:** If the real backend crashes, the AI instantly provides a mock fallback—your frontend never sees a "Site Cannot Be Reached" error.
+- **Authenticated Control:** Manage your `TARGET_URL` and chaos profiles securely via a Firebase-protected dashboard.
 - **Chaos for Quality:** Built-in "Chaos Engine" lets you inject artificial failure and latency to harden your application.
-- **Contract Regression Watchdog:** Automatically detects when the backend API changes in breaking ways (missing fields, type changes) and alerts you instantly—preventing silent production failures.
+- **Contract Regression Watchdog:** Automatically detects when the backend API changes in breaking ways (missing fields, type changes) and alerts you instantly.
 
 ---
 
@@ -67,9 +68,21 @@ python mock_server.py
 
 ### 3. Use the Dashboard
 Open your browser to:
-- **Control Deck:** `http://localhost:8000/` — Main panel for Chaos and Mode switching (Real-time WebSockets).
-- **Endpoint Explorer:** `http://localhost:8000/admin/explorer` — Structural patterns, learned schemas, and contract drift history with **search and pagination**.
-- **Interactive Docs:** `http://localhost:8000/admin/docs` — Swagger UI for learned APIs.
+- **Landing Page:** `http://localhost:8000/landing` — Feature overview and guided setup.
+- **Control Deck:** `http://localhost:8000/` — Main panel for Chaos, Mode switching, and **Runtime Configuration** of your backend URL.
+- **Endpoint Explorer:** `http://localhost:8000/admin/explorer` — Structural patterns, learned schemas, and contract drift history.
+- **Interactive Docs:** `http://localhost:8000/admin/docs` — Secured Swagger UI (requires login).
+
+---
+
+## 🔐 Security & Configuration
+
+The platform is designed for team environments, ensuring that only authorized users can modify API behaviors or view learned schemas.
+
+- **Firebase Authentication:** All `/admin/*` routes and the Control Deck are protected by Firebase Auth.
+- **Runtime Target URL:** No need to restart the server to change backends. Once signed in, you can update the **Target API URL** directly from the "Platform Configuration" section in the Control Deck.
+- **Protected Documentation:** Swagger docs are now protected behind the same authentication layer, ensuring your API contracts remain private.
+- **Safe Proxying:** The proxy service includes built-in guards to prevent public exposure of administrative routes and handles unconfigured target URLs gracefully.
 
 ---
 

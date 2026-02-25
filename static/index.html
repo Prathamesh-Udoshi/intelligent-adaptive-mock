@@ -458,6 +458,19 @@
                     <div class="val-sub" style="margin-top:-5px; margin-bottom: 20px;">Master API behavior from active
                         Proxy traffic.</div>
 
+                    <div style="margin-bottom: 15px;">
+                        <div
+                            style="margin-bottom: 8px; color: #888; font-size: 11px; text-transform: uppercase; font-weight: bold;">
+                            Target API URL</div>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="targetUrlInput" placeholder="https://api.example.com"
+                                style="flex: 1; background: #000; color: #fff; border: 1px solid #222; padding: 10px; border-radius: 8px; font-family: 'JetBrains Mono'; font-size: 12px; outline: none;">
+                            <button onclick="saveTargetUrl()" id="saveTargetBtn" class="btn btn-primary"
+                                style="width: auto; padding: 0 15px;">Save</button>
+                        </div>
+                        <div id="targetUrlStatus" style="font-size: 10px; margin-top: 5px; min-height: 12px;"></div>
+                    </div>
+
                     <div
                         style="margin-bottom: 10px; color: #888; font-size: 11px; text-transform: uppercase; font-weight: bold;">
                         Operation Mode</div>
@@ -647,12 +660,24 @@
             chart.update();
         }
 
-        // Init config \u0026 UI
-        syncConfig();
+        // Auth-aware fetch wrapper
+        // All /admin/* fetch calls go through authedFetch so the Firebase ID token
+        // is automatically attached. Falls back gracefully if token not set yet.
+        function authedFetch(url, options) {
+            options = options || {};
+            var token = window.__authToken;
+            var headers = Object.assign({}, options.headers || {});
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+            return fetch(url, Object.assign({}, options, { headers: headers }));
+        }
+
+        // Dashboard init is deferred - the Firebase auth module calls
+        // window.__initDashboard() only AFTER window.__authToken is stored.
+        window.__initDashboard = syncConfig;
 
         slider.onchange = async function () {
             output.innerHTML = this.value;
-            await fetch('/admin/chaos', {
+            await authedFetch('/admin/chaos', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ level: this.value })
@@ -661,7 +686,7 @@
         slider.oninput = function () { output.innerHTML = this.value; }
 
         learningToggle.onchange = async function () {
-            await fetch('/admin/learning', {
+            await authedFetch('/admin/learning', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ enabled: this.checked })
@@ -669,7 +694,7 @@
         }
 
         async function setMode(mode) {
-            await fetch('/admin/mode', {
+            await authedFetch('/admin/mode', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode: mode })
@@ -711,7 +736,7 @@
         async function loadEndpointDetails(id) {
             if (!id) return;
             try {
-                const statsRes = await fetch(`/admin/endpoints/${id}/stats`);
+                const statsRes = await authedFetch(`/admin/endpoints/${id}/stats`);
                 const stats = await statsRes.json();
                 currentEndpointStats = stats;
 
@@ -752,7 +777,7 @@
             if (!id) return alert("Select an endpoint first");
             try {
                 const newSchema = JSON.parse(document.getElementById("schemaEditor").value);
-                await fetch(`/admin/endpoints/${id}/schema`, {
+                await authedFetch(`/admin/endpoints/${id}/schema`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ schema: newSchema, type: currentSchemaTab })
@@ -766,7 +791,7 @@
         window.endpointData = {};
         async function loadEndpoints() {
             try {
-                const res = await fetch('/admin/endpoints');
+                const res = await authedFetch('/admin/endpoints');
                 const endpoints = await res.json();
                 const select = document.getElementById("endpointSelect");
                 const currentVal = select.value;
@@ -785,21 +810,67 @@
 
         async function syncConfig() {
             try {
-                const res = await fetch('/admin/config');
+                const res = await authedFetch('/admin/config');
                 const data = await res.json();
                 slider.value = data.chaos_level || 0;
                 output.innerHTML = data.chaos_level || 0;
                 learningToggle.checked = data.learning_mode;
                 updateModeUI(data.platform_mode);
 
+                if (data.target_url) {
+                    document.getElementById('targetUrlInput').value = data.target_url;
+                    document.getElementById('targetUrlStatus').textContent = 'Currently pointing to: ' + data.target_url;
+                    document.getElementById('targetUrlStatus').style.color = '#5cb85c';
+                }
+
                 await loadProfiles(data.active_chaos_profile);
                 await loadEndpoints();
+                // Fetch health banner after config is loaded
+                authedFetch('/admin/health/global').then(r => r.json()).then(updateHealthBanner).catch(() => { });
             } catch (e) { }
+        }
+
+        async function saveTargetUrl() {
+            const input = document.getElementById('targetUrlInput');
+            const status = document.getElementById('targetUrlStatus');
+            const btn = document.getElementById('saveTargetBtn');
+            const url = input.value.trim();
+
+            if (!url) {
+                status.textContent = "Please enter a URL";
+                status.style.color = "#ff4757";
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = "...";
+
+            try {
+                const res = await authedFetch('/admin/target', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target_url: url })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    status.textContent = "Target updated successfully";
+                    status.style.color = "#5cb85c";
+                } else {
+                    status.textContent = "Error: " + (data.detail || "Failed to update");
+                    status.style.color = "#ff4757";
+                }
+            } catch (e) {
+                status.textContent = "Network error";
+                status.style.color = "#ff4757";
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Save";
+            }
         }
 
         let platformProfiles = {};
         async function loadProfiles(activeProfile) {
-            const res = await fetch('/admin/chaos/profiles');
+            const res = await authedFetch('/admin/chaos/profiles');
             platformProfiles = await res.json();
             const select = document.getElementById("chaosProfile");
             select.innerHTML = "";
@@ -820,7 +891,7 @@
         }
 
         async function setChaosProfile(profile) {
-            await fetch('/admin/chaos/profiles', {
+            await authedFetch('/admin/chaos/profiles', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ profile })
@@ -852,7 +923,8 @@
 
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            const token = window.__authToken || '';
+            const wsUrl = `${protocol}//${window.location.host}/ws${token ? '?token=' + encodeURIComponent(token) : ''}`;
             const socket = new WebSocket(wsUrl);
             socket.onmessage = function (event) {
                 const message = JSON.parse(event.data);
@@ -962,8 +1034,7 @@
             banner.style.boxShadow = health.status !== 'healthy' ? `0 0 20px ${color}22` : 'none';
         }
 
-        // Initial health fetch
-        fetch('/admin/health/global').then(r => r.json()).then(updateHealthBanner).catch(() => { });
+        // Health banner is now fetched inside syncConfig() after auth is ready.
     </script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -976,12 +1047,23 @@
                 const app = initializeApp(firebaseConfig);
                 const auth = getAuth(app);
 
-                onAuthStateChanged(auth, (user) => {
+                onAuthStateChanged(auth, async (user) => {
                     const overlay = document.getElementById('authOverlay');
                     const navUser = document.getElementById('nav-user');
 
                     if (user) {
+                        // 1. Store token globally for authedFetch & WebSocket
+                        window.__authToken = await user.getIdToken();
+
+                        // 2. Refresh before expiry (Firebase tokens last 1 hour)
+                        setInterval(async () => {
+                            window.__authToken = await user.getIdToken(true);
+                        }, 55 * 60 * 1000);
+
+                        // 3. Hide the loading overlay
                         if (overlay) overlay.style.display = 'none';
+
+                        // 4. Populate nav user info
                         if (navUser) {
                             navUser.style.display = "flex";
                             navUser.style.alignItems = "center";
@@ -996,6 +1078,12 @@
                             `;
                             document.getElementById('signOutBtn').onclick = () => signOut(auth).then(() => window.location.href = '/login');
                         }
+
+                        // 5. NOW load dashboard data — token is ready
+                        if (window.__initDashboard) window.__initDashboard();
+
+                        // 6. Connect WebSocket after token is available
+                        connectWebSocket();
                     } else {
                         window.location.href = '/login';
                     }

@@ -58,12 +58,15 @@
                 const cfg = await resp.json();
                 const auth = getAuth(initializeApp(cfg));
 
-                onAuthStateChanged(auth, (user) => {
+                onAuthStateChanged(auth, async (user) => {
                     if (user) {
-                        // Authorized! Redirect to the internal swagger UI
-                        window.location.replace('/admin/swagger-ui');
+                        // Get the ID token and pass it to the Swagger UI page
+                        // so it doesn't need to re-initialise Firebase from scratch.
+                        const token = await user.getIdToken();
+                        window.location.replace(
+                            '/admin/swagger-ui?token=' + encodeURIComponent(token)
+                        );
                     } else {
-                        // Not logged in
                         window.location.replace('/login?redirect=/admin/docs');
                     }
                 });
