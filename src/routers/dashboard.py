@@ -109,7 +109,7 @@ async def get_internal_swagger(token: str = ""):
         <meta charset="utf-8">
         <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
         <style>
-            body {{ margin: 0; background: #0d0d0d; }}
+            body {{ margin: 0; background: #ffffff; }}
             #loading {{
                 display: flex; align-items: center; justify-content: center;
                 height: 100vh; color: #aaa; font-family: 'Outfit', sans-serif; font-size: 16px;
