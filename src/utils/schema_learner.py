@@ -406,26 +406,128 @@ def learn_schema(current_schema, new_body):
 
 
 # ──────────────────────────────────────────────────────
-# MOCK RESPONSE GENERATION (enhanced with smart values)
+# MOCK RESPONSE GENERATION (handles both legacy + rich schema formats)
 # ──────────────────────────────────────────────────────
+
+_META = "__meta__"
+_ITEMS = "__items__"
+
+
+def _is_rich_schema(schema) -> bool:
+    """
+    Detect whether a schema dict came from SchemaLearner (rich format)
+    vs. the older learn_schema() simple format.
+
+    The rich format always has a top-level "__meta__" key.
+    """
+    return isinstance(schema, dict) and _META in schema
+
+
+def _primary_type_from_meta(meta: dict):
+    """Return the dominant JSON type recorded in a __meta__ descriptor, or None."""
+    types_seen = set(meta.get("types_seen", []))
+    for preferred in ("object", "array", "string", "integer", "number", "boolean"):
+        if preferred in types_seen:
+            return preferred
+    return None
+
+
+def _generate_from_rich_schema(node: dict, request_data=None, field_name="") -> object:
+    """
+    Recursively generate a mock value from a SchemaLearner rich-format node.
+
+    Node structure:
+        {
+            "__meta__": { types_seen, nullable, example, ... },
+            "child_key": { <nested node> },   # for object children
+            "__items__": { <nested node> }    # for array items
+        }
+    """
+    meta = node.get(_META, {})
+    primary = _primary_type_from_meta(meta)
+    example = meta.get("example")  # last observed real value
+
+    # ── Object ────────────────────────────────────────────────────────────────
+    if primary == "object":
+        result = {}
+        for key, child in node.items():
+            if key in (_META, _ITEMS):
+                continue
+            # Priority: echo matching request key (scalars only)
+            if (
+                request_data
+                and isinstance(request_data, dict)
+                and key in request_data
+                and not isinstance(request_data[key], (dict, list))
+            ):
+                result[key] = request_data[key]
+            else:
+                nested_req = (
+                    request_data.get(key)
+                    if isinstance(request_data, dict)
+                    else None
+                )
+                result[key] = _generate_from_rich_schema(child, nested_req, field_name=key)
+        return result
+
+    # ── Array ─────────────────────────────────────────────────────────────────
+    elif primary == "array":
+        items_node = node.get(_ITEMS)
+        if not items_node:
+            return []
+        item_count = random.randint(1, 4)
+        return [
+            _generate_from_rich_schema(items_node, None, field_name=field_name)
+            for _ in range(item_count)
+        ]
+
+    # ── Primitive ─────────────────────────────────────────────────────────────
+    else:
+        # Try smart heuristic generation from field name first
+        if field_name:
+            smart = _generate_smart_value(field_name, example)
+            if smart is not None:
+                return smart
+
+        # Fall back to the recorded example / type defaults
+        if example is not None:
+            return example
+
+        # Last-resort defaults per type
+        if primary == "string":
+            return "mock_value"
+        elif primary in ("integer", "number"):
+            return random.randint(0, 100)
+        elif primary == "boolean":
+            return True
+        return None
+
 
 def generate_mock_response(schema, request_data=None):
     """
     Generates a mock response with realistic, varied data.
-    
-    Priority:
-    1. Echo values from request_data if matching keys exist
-    2. Use field-name heuristics for smart generation
-    3. Fall back to the learned sample value
+
+    Supports two internal schema formats:
+      - Rich format  (SchemaIntelligence / SchemaLearner): has ``__meta__`` keys.
+      - Legacy format (old learn_schema()): plain ``{field: last_value}`` dict.
+
+    Priority within each format:
+      1. Echo values from request_data if matching scalar keys exist.
+      2. Use field-name heuristics for smart generation.
+      3. Fall back to the recorded example / type defaults.
     """
     if not schema:
         return {"status": "success"}
-    
-    response = _deep_copy_and_correlate(schema, request_data or {})
-    return response
+
+    if _is_rich_schema(schema):
+        return _generate_from_rich_schema(schema, request_data or {})
+
+    # Legacy simple-format path
+    return _deep_copy_and_correlate(schema, request_data or {})
 
 
 def _deep_copy_and_correlate(schema_node, source, parent_key=""):
+    """Generate a mock from the legacy simple schema format."""
     if not isinstance(schema_node, dict):
         # For primitive values stored directly, apply smart generation
         if parent_key:
@@ -433,27 +535,30 @@ def _deep_copy_and_correlate(schema_node, source, parent_key=""):
             if smart is not None:
                 return smart
         return schema_node
-    
+
     result = {}
     for k, v in schema_node.items():
-        # Skip internal metadata keys
+        # Skip internal metadata keys (safety guard for mixed schemas)
         if k.startswith("_"):
             continue
-            
+
         # Priority 1: Echo from request data if key matches
         if source and k in source and not isinstance(source[k], (dict, list)):
             result[k] = source[k]
-        
+
         # Priority 2: Recurse into nested objects
         elif isinstance(v, dict):
             nested_source = source.get(k) if isinstance(source, dict) else None
             result[k] = _deep_copy_and_correlate(v, nested_source, parent_key=k)
-        
+
         # Priority 3: Handle arrays — generate varied items
         elif isinstance(v, list) and v:
             item_count = random.randint(1, 4)
-            result[k] = [_deep_copy_and_correlate(v[0], None, parent_key=k) for _ in range(item_count)]
-        
+            result[k] = [
+                _deep_copy_and_correlate(v[0], None, parent_key=k)
+                for _ in range(item_count)
+            ]
+
         # Priority 4: Smart value generation for primitives
         else:
             smart = _generate_smart_value(k, v)
@@ -461,5 +566,5 @@ def _deep_copy_and_correlate(schema_node, source, parent_key=""):
                 result[k] = smart
             else:
                 result[k] = v
-            
+
     return result
