@@ -1,9 +1,14 @@
 fastapi
 uvicorn[standard]
 sqlalchemy[asyncio]
+asyncpg
 aiosqlite
 httpx
 pydantic
 numpy
 websockets
-firebase-admin
+python-jose[cryptography]
+cryptography
+PyJWT
+python-dotenv
+alembic
