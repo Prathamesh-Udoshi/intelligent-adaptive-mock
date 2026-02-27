@@ -90,7 +90,10 @@ _FIELD_PATTERNS = [
      "bio", "about", "blurb"],                          "description"),
     (["body", "content", "text", "message",
      "comment", "note", "details",
-     "instructions", "remarks"],                        "paragraph"),
+     "instructions", "remarks",
+     "impact", "assumption", "reason",
+     "explanation", "suggestion", "error",
+     "warning", "result", "output"],                    "paragraph"),
     (["tag", "label", "category", "type",
      "kind", "group", "role"],                          "tag"),
     
@@ -184,7 +187,17 @@ _DESCRIPTIONS = [
     "This resource provides detailed information about the service.",
     "Automatically generated content based on observed API patterns.",
     "Key insights derived from production traffic analysis.",
-    "A curated collection of data points for this entity."
+    "A curated collection of data points for this entity.",
+    "The requirement uses vague terminology that needs clarification before automation.",
+    "This condition assumes specific environment setup that may not always be available.",
+    "The expected outcome lacks concrete acceptance criteria for verification.",
+    "Missing explicit preconditions that must be met for this test to execute.",
+    "The action described is ambiguous and could be interpreted in multiple ways.",
+    "This step depends on data that must be prepared separately before execution.",
+    "No specific success criteria are defined to determine test pass or fail.",
+    "The referenced system state may vary between environments and test runs.",
+    "Implicit assumptions about user permissions could cause intermittent failures.",
+    "Additional context is required to make this test case deterministically repeatable.",
 ]
 
 _COLORS = [
@@ -432,7 +445,7 @@ def _primary_type_from_meta(meta: dict):
     return None
 
 
-def _generate_from_rich_schema(node: dict, request_data=None, field_name="") -> object:
+def _generate_from_rich_schema(node, request_data=None, field_name="") -> object:
     """
     Recursively generate a mock value from a SchemaLearner rich-format node.
 
@@ -443,9 +456,18 @@ def _generate_from_rich_schema(node: dict, request_data=None, field_name="") -> 
             "__items__": { <nested node> }    # for array items
         }
     """
+    # Guard: non-dict nodes can appear in mixed-format schemas
+    if not isinstance(node, dict):
+        if field_name:
+            smart = _generate_smart_value(field_name, node)
+            if smart is not None:
+                return smart
+        return node  # return as-is (primitive stored directly in legacy format)
+
     meta = node.get(_META, {})
     primary = _primary_type_from_meta(meta)
     example = meta.get("example")  # last observed real value
+    nullable = meta.get("nullable", False)
 
     # ── Object ────────────────────────────────────────────────────────────────
     if primary == "object":
@@ -481,25 +503,31 @@ def _generate_from_rich_schema(node: dict, request_data=None, field_name="") -> 
             for _ in range(item_count)
         ]
 
-    # ── Primitive ─────────────────────────────────────────────────────────────
+    # ── Primitive (or unknown / only-null field) ───────────────────────────────
     else:
-        # Try smart heuristic generation from field name first
+        # 1. Try field-name heuristic first — works regardless of primary type.
+        #    This handles nullable strings where types_seen=[] because the field
+        #    was only ever null in observed traffic (e.g. optional `category`).
         if field_name:
             smart = _generate_smart_value(field_name, example)
             if smart is not None:
                 return smart
 
-        # Fall back to the recorded example / type defaults
+        # 2. Fall back to the last real recorded example value.
         if example is not None:
             return example
 
-        # Last-resort defaults per type
+        # 3. Type-based defaults for non-nullable fields.
         if primary == "string":
             return "mock_value"
         elif primary in ("integer", "number"):
             return random.randint(0, 100)
         elif primary == "boolean":
             return True
+
+        # 4. Field was ONLY ever null (primary=None, nullable=True) AND
+        #    no heuristic matched. Returning None is semantically correct for
+        #    a purely-optional field — consumers should handle null for these.
         return None
 
 

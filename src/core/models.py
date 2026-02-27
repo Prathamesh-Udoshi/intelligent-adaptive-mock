@@ -13,7 +13,7 @@ Column notes:
 
 import datetime
 
-from sqlalchemy import Column, Integer, String, Float, JSON, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Float, JSON, Boolean, DateTime, ForeignKey, func, UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -27,6 +27,11 @@ class Endpoint(Base):
     path_pattern = Column(String, nullable=False)   # Normalised, e.g. /users/{id}
     target_url  = Column(String, nullable=False)
     created_at  = Column(DateTime, default=datetime.datetime.utcnow, server_default=func.now())
+
+    # Prevent duplicate (method, path_pattern) rows from race conditions
+    __table_args__ = (
+        UniqueConstraint("method", "path_pattern", name="uq_endpoint_method_path"),
+    )
 
     behavior = relationship("EndpointBehavior", back_populates="endpoint", uselist=False)
     chaos    = relationship("ChaosConfig",      back_populates="endpoint", uselist=False)

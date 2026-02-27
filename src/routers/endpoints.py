@@ -104,9 +104,22 @@ async def create_manual_endpoint(request: Request):
 @router.get("/admin/endpoints", dependencies=[Depends(require_auth)])
 async def list_endpoints():
     async with AsyncSessionLocal() as session:
-        res = await session.execute(select(Endpoint))
+        res = await session.execute(select(Endpoint).order_by(Endpoint.id))
         endpoints = res.scalars().all()
-        return endpoints
+
+        # Deduplicate by (method, path_pattern) — keep the lowest-id row.
+        # Duplicates can exist due to a race condition between proxy.py and
+        # process_learning_buffer(). The UniqueConstraint in models.py prevents
+        # new duplicates; this guard handles any already in the DB.
+        seen = {}
+        unique_endpoints = []
+        for ep in endpoints:
+            key = (ep.method, ep.path_pattern)
+            if key not in seen:
+                seen[key] = ep.id
+                unique_endpoints.append(ep)
+
+        return unique_endpoints
 
 
 @router.get("/admin/endpoints/{endpoint_id}/stats", dependencies=[Depends(require_auth)])
@@ -186,5 +199,60 @@ async def update_endpoint_schema(endpoint_id: int, data: Dict[str, Any]):
         )
         await session.commit()
         return {"status": "schema_updated", "type": schema_type}
+
+
+@router.post("/admin/endpoints/cleanup", dependencies=[Depends(require_auth)])
+async def cleanup_duplicate_endpoints():
+    """
+    Remove duplicate endpoint rows (same method + path_pattern) from the database.
+    Keeps the row with the lowest id for each (method, path_pattern) pair.
+    Safe to call at any time; idempotent.
+    """
+    from sqlalchemy import delete, func as sqlfunc, text
+
+    removed = 0
+    async with AsyncSessionLocal() as session:
+        # Fetch all endpoints ordered by id
+        res = await session.execute(select(Endpoint).order_by(Endpoint.id))
+        all_eps = res.scalars().all()
+
+        # Group by (method, path_pattern) — first occurrence is the canonical row
+        canonical_ids = {}
+        duplicate_ids = []
+        for ep in all_eps:
+            key = (ep.method, ep.path_pattern)
+            if key not in canonical_ids:
+                canonical_ids[key] = ep.id
+            else:
+                duplicate_ids.append(ep.id)
+
+        if duplicate_ids:
+            # Delete orphaned behavior/chaos/health rows for duplicates first
+            from core.models import EndpointBehavior, ChaosConfig, HealthMetric, ContractDrift
+            for dup_id in duplicate_ids:
+                await session.execute(
+                    delete(EndpointBehavior).where(EndpointBehavior.endpoint_id == dup_id)
+                )
+                await session.execute(
+                    delete(ChaosConfig).where(ChaosConfig.endpoint_id == dup_id)
+                )
+                await session.execute(
+                    delete(HealthMetric).where(HealthMetric.endpoint_id == dup_id)
+                )
+                await session.execute(
+                    delete(ContractDrift).where(ContractDrift.endpoint_id == dup_id)
+                )
+                await session.execute(
+                    delete(Endpoint).where(Endpoint.id == dup_id)
+                )
+
+            await session.commit()
+            removed = len(duplicate_ids)
+
+    return {
+        "status": "cleanup_complete",
+        "duplicates_removed": removed,
+        "canonical_endpoints": len(canonical_ids)
+    }
 
 

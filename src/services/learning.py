@@ -31,8 +31,12 @@ async def get_or_create_endpoint(session: AsyncSession, method: str, path_patter
     """
     Find an existing endpoint or create a new one.
     NOTE: Does NOT call session.commit() — the caller is responsible for committing.
+    
+    Safe against race conditions: if two coroutines try to create the same endpoint
+    concurrently, the second will catch the IntegrityError and re-fetch the row.
     """
     from core.state import TARGET_URL
+    from sqlalchemy.exc import IntegrityError
 
     result = await session.execute(
         select(Endpoint).where(Endpoint.method == method, Endpoint.path_pattern == path_pattern)
@@ -40,15 +44,24 @@ async def get_or_create_endpoint(session: AsyncSession, method: str, path_patter
     endpoint = result.scalars().first()
 
     if not endpoint:
-        endpoint = Endpoint(method=method, path_pattern=path_pattern, target_url=TARGET_URL)
-        session.add(endpoint)
-        await session.flush()  # Get the ID without committing
+        try:
+            endpoint = Endpoint(method=method, path_pattern=path_pattern, target_url=TARGET_URL)
+            session.add(endpoint)
+            await session.flush()  # Get the ID without committing
 
-        behavior = EndpointBehavior(endpoint_id=endpoint.id)
-        chaos = ChaosConfig(endpoint_id=endpoint.id)
-        session.add(behavior)
-        session.add(chaos)
-        await session.flush()  # Flush behavior/chaos too, but DO NOT commit
+            behavior = EndpointBehavior(endpoint_id=endpoint.id)
+            chaos = ChaosConfig(endpoint_id=endpoint.id)
+            session.add(behavior)
+            session.add(chaos)
+            await session.flush()
+        except IntegrityError:
+            # Another coroutine created this endpoint concurrently — roll back the
+            # duplicate attempt and fetch the row that the winner inserted.
+            await session.rollback()
+            result = await session.execute(
+                select(Endpoint).where(Endpoint.method == method, Endpoint.path_pattern == path_pattern)
+            )
+            endpoint = result.scalars().first()
 
     return endpoint
 
@@ -185,16 +198,16 @@ async def process_learning_buffer():
                     behavior = None
 
                     if not endpoint:
-                        from core.state import TARGET_URL
-                        endpoint = Endpoint(method=method, path_pattern=path_pattern, target_url=TARGET_URL)
-                        session.add(endpoint)
-                        await session.flush()  # Get assigned ID
-                        # Create and KEEP reference — don't re-select, the object is already live
-                        behavior = EndpointBehavior(endpoint_id=endpoint.id)
-                        chaos = ChaosConfig(endpoint_id=endpoint.id)
-                        session.add(behavior)
-                        session.add(chaos)
-                        await session.flush()
+                        # proxy.py always creates the endpoint before scheduling this
+                        # background task, so this path should never be reached in
+                        # normal operation. If it happens (e.g. the endpoint was deleted
+                        # between the proxy request and this background flush), skip
+                        # rather than creating a duplicate.
+                        logger.warning(
+                            f"⚠️ process_learning_buffer: endpoint {method} {path_pattern} "
+                            f"not found in DB — skipping this observation."
+                        )
+                        continue
                     else:
                         # Only SELECT for existing endpoints — for new ones we already have the object
                         b_res = await session.execute(
