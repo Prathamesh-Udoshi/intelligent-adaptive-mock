@@ -44,20 +44,11 @@ class EndpointBehavior(Base):
 
     # Error rates and status codes
     error_rate              = Column(Float, default=0.0)
-    status_code_distribution = Column(
-        JSON().with_variant(JSON(none_as_null=True), "postgresql"),
-        nullable=True,
-    )
+    status_code_distribution = Column(JSON, nullable=True)
 
     # Schema info
-    response_schema = Column(
-        JSON().with_variant(JSON(none_as_null=True), "postgresql"),
-        nullable=True,
-    )
-    request_schema = Column(
-        JSON().with_variant(JSON(none_as_null=True), "postgresql"),
-        nullable=True,
-    )
+    response_schema = Column(JSON, nullable=True)
+    request_schema  = Column(JSON, nullable=True)
 
     endpoint = relationship("Endpoint", back_populates="behavior")
 
@@ -84,10 +75,7 @@ class ContractDrift(Base):
     detected_at  = Column(DateTime, default=datetime.datetime.utcnow, server_default=func.now())
     drift_score  = Column(Float, default=0.0)      # 0–100 severity score
     drift_summary = Column(String, nullable=True)   # Human-readable summary
-    drift_details = Column(
-        JSON().with_variant(JSON(none_as_null=True), "postgresql"),
-        nullable=True,
-    )
+    drift_details = Column(JSON, nullable=True)
 
     # Status tracking
     is_resolved = Column(Boolean, default=False)
@@ -118,9 +106,6 @@ class HealthMetric(Base):
 
     # Overall health score for this observation (0–100, 100=healthy)
     health_score    = Column(Float, default=100.0)
-    anomaly_reasons = Column(
-        JSON().with_variant(JSON(none_as_null=True), "postgresql"),
-        nullable=True,
-    )
+    anomaly_reasons = Column(JSON, nullable=True)
 
     endpoint = relationship("Endpoint")

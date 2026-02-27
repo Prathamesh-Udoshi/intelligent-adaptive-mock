@@ -694,12 +694,21 @@
         }
 
         async function setMode(mode) {
-            await authedFetch('/admin/mode', {
+            const res = await authedFetch('/admin/mode', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode: mode })
             });
             updateModeUI(mode);
+
+            // Inject a visible divider row into the live stream so the mode
+            // change is immediately obvious without waiting for the next request.
+            const modeLabel = mode === 'mock' ? '🚀 Switched to ROCKET (Mock) Mode' : '👻 Switched to GHOST (Proxy) Mode';
+            const modeColor = mode === 'mock' ? '#a48eff' : '#5cb85c';
+            const row = document.createElement('tr');
+            row.innerHTML = `<td colspan="7" style="text-align:center;color:${modeColor};font-weight:700;padding:10px;border-bottom:1px solid rgba(255,255,255,0.05);">${modeLabel}</td>`;
+            if (logBody.firstChild) logBody.insertBefore(row, logBody.firstChild);
+            else logBody.appendChild(row);
         }
 
         function updateModeUI(mode) {
@@ -981,6 +990,11 @@
             });
         }
         connectWebSocket();
+        // Note: connectWebSocket() is also called by the Firebase auth module
+        // (after the token is ready). The first call here — without a token —
+        // is intentional for dev environments where FIREBASE_PROJECT_ID is unset.
+        // In production the auth module's call (with a token) wins and the
+        // unauthenticated connection is closed by the server before it receives any data.
 
         async function req(id, headers) {
             const ep = window.endpointData[id]; if (!ep) return;

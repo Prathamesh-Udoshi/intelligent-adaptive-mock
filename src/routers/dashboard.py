@@ -39,7 +39,7 @@ else:
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "static")
 
 @router.get("/api/config")
-async def get_config():
+async def get_firebase_config():
     config = {
         "apiKey": os.environ.get("FIREBASE_API_KEY"),
         "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN"),
@@ -184,7 +184,7 @@ async def get_user_guide():
 # ── Config & State ──
 
 @router.get("/admin/config", dependencies=[Depends(require_auth)])
-async def get_config():
+async def get_platform_config():
     return {
         "chaos_level": 0,
         "learning_mode": PLATFORM_STATE["learning_enabled"],
