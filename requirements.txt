@@ -12,3 +12,4 @@ cryptography
 PyJWT
 python-dotenv
 alembic
+openai

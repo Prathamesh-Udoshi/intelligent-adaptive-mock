@@ -29,6 +29,7 @@ from services.learning import (
 )
 from utils.normalization import normalize_path
 from utils.schema_learner import generate_mock_response
+from utils.ai_mock_generator import generate_ai_mock
 from utils.schema_intelligence import learn_and_compare, contract_reporter
 
 logger = logging.getLogger("mock_platform")
@@ -287,12 +288,27 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
 
         try:
             req_body = await request.json()
-        except:
+        except Exception:
             req_body = {}
 
-        schema = behavior.response_schema if behavior else None
-        mock_body = generate_mock_response(schema, req_body)
+        response_schema = behavior.response_schema if behavior else None
+        request_schema  = behavior.request_schema  if behavior else None
 
+        # ── Mock body generation: AI first, schema-tree second ─────────────────
+        # 1. Try OpenAI few-shot generation (needs OPENAI_API_KEY + learned schema)
+        mock_body = await generate_ai_mock(
+            endpoint_path=normalized,
+            method=request.method,
+            response_schema=response_schema,
+            request_schema=request_schema,
+            current_request_body=req_body,
+        )
+
+        # 2. Fall back to deterministic schema-tree reconstruction
+        if not mock_body:
+            mock_body = generate_mock_response(response_schema, req_body)
+
+        # 3. Last-resort generic fallback
         if not mock_body:
             mock_body = {"message": "AI fallback (No patterns learned yet)", "endpoint": normalized}
 

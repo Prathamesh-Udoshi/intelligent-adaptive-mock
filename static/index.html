@@ -481,6 +481,51 @@
                     </div>
                 </div>
 
+                <!-- AI Mock Engine Config -->
+                <div class="control-group" id="aiConfigPanel">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                        <h2 style="margin:0; border:none;">&#10024; AI Mock Engine</h2>
+                        <span id="aiStatusBadge"
+                            style="font-size:10px; font-weight:800; padding:3px 10px; border-radius:20px; background:rgba(255,71,87,0.15); color:#ff4757; border:1px solid rgba(255,71,87,0.3);">OFFLINE</span>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-dim); margin-bottom:14px; line-height:1.5;">
+                        Uses <b style="color:#fff;">GPT-4o-mini</b> with few-shot prompting from real traffic examples
+                        to generate contextually accurate mock responses.
+                    </div>
+                    <div
+                        style="margin-bottom:10px; color:#888; font-size:11px; text-transform:uppercase; font-weight:bold;">
+                        OpenAI API Key</div>
+                    <div style="display:flex; gap:8px; margin-bottom:6px;">
+                        <input type="password" id="aiKeyInput" placeholder="sk-..." autocomplete="off"
+                            style="flex:1; background:#000; color:#fff; border:1px solid #222; padding:10px; border-radius:8px; font-family:'JetBrains Mono'; font-size:12px; outline:none;">
+                        <button onclick="saveAiConfig()" id="saveAiBtn" class="btn btn-primary"
+                            style="width:auto; padding:0 15px;">Save</button>
+                    </div>
+                    <div id="aiKeyStatus"
+                        style="font-size:10px; margin-top:4px; min-height:12px; color:var(--text-dim);"></div>
+                    <details style="margin-top:12px;">
+                        <summary style="cursor:pointer; font-size:11px; color:var(--text-dim); user-select:none;">
+                            &#9881;&#65039; Advanced Settings</summary>
+                        <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
+                            <label style="font-size:11px; color:#888;">
+                                Model
+                                <select id="aiModel"
+                                    style="margin-left:8px; background:#111; color:#fff; border:1px solid #333; border-radius:6px; padding:4px 8px; font-family:'Outfit'; font-size:12px;">
+                                    <option value="gpt-4o-mini">gpt-4o-mini (fast + cheap)</option>
+                                    <option value="gpt-4o">gpt-4o (best quality)</option>
+                                    <option value="gpt-3.5-turbo">gpt-3.5-turbo (legacy)</option>
+                                </select>
+                            </label>
+                            <label style="font-size:11px; color:#888; display:flex; align-items:center; gap:8px;">
+                                Temperature <span id="tempVal"
+                                    style="color:#fff; font-family:'JetBrains Mono';">0.7</span>
+                                <input type="range" id="aiTemp" min="0" max="1" step="0.1" value="0.7"
+                                    oninput="document.getElementById('tempVal').textContent=this.value" style="flex:1;">
+                            </label>
+                        </div>
+                    </details>
+                </div>
+
                 <div class="control-group">
                     <h2>Test Console</h2>
                     <select id="endpointSelect"
@@ -836,7 +881,38 @@
                 await loadEndpoints();
                 // Fetch health banner after config is loaded
                 authedFetch('/admin/health/global').then(r => r.json()).then(updateHealthBanner).catch(() => { });
+                // Fetch AI mock status
+                authedFetch('/admin/ai-config').then(r => r.json()).then(updateAiBadge).catch(() => { });
             } catch (e) { }
+        }
+
+        function updateAiBadge(cfg) {
+            const badge = document.getElementById('aiStatusBadge');
+            const status = document.getElementById('aiKeyStatus');
+            if (!badge) return;
+            if (cfg && cfg.ai_mock_enabled) {
+                badge.textContent = 'ONLINE';
+                badge.style.background = 'rgba(92,184,92,0.15)';
+                badge.style.color = '#5cb85c';
+                badge.style.borderColor = 'rgba(92,184,92,0.3)';
+                if (status && cfg.key_preview) status.textContent = 'Active key: ' + cfg.key_preview;
+                if (cfg.model) {
+                    const modelSel = document.getElementById('aiModel');
+                    if (modelSel) modelSel.value = cfg.model;
+                }
+                if (cfg.temperature !== undefined) {
+                    const tempSlider = document.getElementById('aiTemp');
+                    const tempVal = document.getElementById('tempVal');
+                    if (tempSlider) tempSlider.value = cfg.temperature;
+                    if (tempVal) tempVal.textContent = cfg.temperature;
+                }
+            } else {
+                badge.textContent = 'OFFLINE';
+                badge.style.background = 'rgba(255,71,87,0.15)';
+                badge.style.color = '#ff4757';
+                badge.style.borderColor = 'rgba(255,71,87,0.3)';
+                if (status) status.textContent = 'No API key set. Add one to enable AI-powered mocks.';
+            }
         }
 
         async function saveTargetUrl() {
@@ -874,6 +950,43 @@
             } finally {
                 btn.disabled = false;
                 btn.textContent = "Save";
+            }
+        }
+
+        async function saveAiConfig() {
+            const keyInput = document.getElementById('aiKeyInput');
+            const btn = document.getElementById('saveAiBtn');
+            const status = document.getElementById('aiKeyStatus');
+            const key = keyInput.value.trim();
+            const model = document.getElementById('aiModel').value;
+            const temperature = parseFloat(document.getElementById('aiTemp').value);
+
+            if (!key) {
+                status.textContent = 'Please enter an API key (sk-...).'; status.style.color = '#ff4757'; return;
+            }
+
+            btn.disabled = true; btn.textContent = '...';
+            try {
+                const res = await authedFetch('/admin/ai-config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: key, model, temperature })
+                });
+                const data = await res.json();
+                if (res.ok && data.ai_mock_enabled) {
+                    keyInput.value = '';
+                    keyInput.placeholder = 'Key saved ✓  (enter a new key to update)';
+                    updateAiBadge(data);
+                    status.textContent = 'AI Mock Engine is now ONLINE — mock responses will use OpenAI.';
+                    status.style.color = '#5cb85c';
+                } else {
+                    status.textContent = 'Save failed: ' + (data.detail || 'unknown error');
+                    status.style.color = '#ff4757';
+                }
+            } catch (e) {
+                status.textContent = 'Network error'; status.style.color = '#ff4757';
+            } finally {
+                btn.disabled = false; btn.textContent = 'Save';
             }
         }
 

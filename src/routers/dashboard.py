@@ -246,6 +246,42 @@ async def set_platform_mode(request: Request):
     return {"status": "success", "mode": PLATFORM_STATE["mode"]}
 
 
+@router.get("/admin/ai-config", dependencies=[Depends(require_auth)])
+async def get_ai_config():
+    """Return AI mock configuration status (key presence, not the key itself)."""
+    import os
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    return {
+        "ai_mock_enabled": bool(api_key),
+        "model": os.environ.get("OPENAI_MOCK_MODEL", "gpt-4o-mini"),
+        "max_tokens": int(os.environ.get("OPENAI_MOCK_MAX_TOKENS", "2000")),
+        "temperature": float(os.environ.get("OPENAI_MOCK_TEMPERATURE", "0.7")),
+        "key_preview": ("sk-..." + api_key[-4:]) if api_key else None,
+    }
+
+
+@router.post("/admin/ai-config", dependencies=[Depends(require_auth)])
+async def set_ai_config(request: Request):
+    """Set OPENAI_API_KEY and optional model/temperature at runtime."""
+    import os
+    data = await request.json()
+    api_key = data.get("api_key", "").strip()
+    if api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
+    if "model" in data:
+        os.environ["OPENAI_MOCK_MODEL"] = data["model"]
+    if "temperature" in data:
+        os.environ["OPENAI_MOCK_TEMPERATURE"] = str(data["temperature"])
+    if "max_tokens" in data:
+        os.environ["OPENAI_MOCK_MAX_TOKENS"] = str(data["max_tokens"])
+    logger.info(f"✨ AI mock config updated. Key set: {bool(api_key)}")
+    return {
+        "status": "success",
+        "ai_mock_enabled": bool(os.environ.get("OPENAI_API_KEY", "")),
+        "model": os.environ.get("OPENAI_MOCK_MODEL", "gpt-4o-mini"),
+    }
+
+
 @router.get("/admin/logs", dependencies=[Depends(require_auth)])
 async def get_recent_logs():
     async with logs_lock:
