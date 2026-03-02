@@ -1043,11 +1043,43 @@
             } catch (e) { return isoStr; }
         }
 
+        // Singleton-safe WebSocket manager.
+        // Tracks the one active socket so a second call to connectWebSocket()
+        // (from the auth module) does not create a duplicate connection.
+        let _activeSocket = null;
+        let _wsRetryTimer = null;
+
         function connectWebSocket() {
+            // If an unauthenticated socket is open and we now have a token,
+            // close the old one so we can reconnect with proper credentials.
+            const hasToken = !!window.__authToken;
+            const isUnauthed = _activeSocket
+                && _activeSocket._isUnauthed   // our flag
+                && hasToken;                    // we now have a real token
+
+            if (_activeSocket && !isUnauthed) {
+                // Already have a good socket — nothing to do.
+                if (_activeSocket.readyState === WebSocket.OPEN ||
+                    _activeSocket.readyState === WebSocket.CONNECTING) return;
+            }
+
+            // Cancel any pending retry timer so we don't open yet another connection.
+            if (_wsRetryTimer) { clearTimeout(_wsRetryTimer); _wsRetryTimer = null; }
+
+            // Close the old tokenless socket cleanly before upgrading.
+            if (isUnauthed) {
+                _activeSocket.onclose = null;  // prevent its onclose from scheduling a retry
+                _activeSocket.close();
+                _activeSocket = null;
+            }
+
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const token = window.__authToken || '';
             const wsUrl = `${protocol}//${window.location.host}/ws${token ? '?token=' + encodeURIComponent(token) : ''}`;
             const socket = new WebSocket(wsUrl);
+            socket._isUnauthed = !token;  // mark so we know to upgrade later
+            _activeSocket = socket;
+
             socket.onmessage = function (event) {
                 const message = JSON.parse(event.data);
                 if (message.type === 'initial') {
@@ -1058,8 +1090,8 @@
                     const row = document.createElement("tr");
                     const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
                     const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
-                    const driftHtml = log.has_drift ? `<span title="Contract Drift Detected" style="cursor:help;">🚨</span>` : '';
-                    const healthDot = log.health === 'critical' ? '🔴' : log.health === 'degraded' ? '🟡' : '🟢';
+                    const driftHtml = log.has_drift ? `<span title="Contract Drift Detected" style="cursor:help;">&#x1F6A8;</span>` : '';
+                    const healthDot = log.health === 'critical' ? '&#x1F534;' : log.health === 'degraded' ? '&#x1F7E1;' : '&#x1F7E2;';
                     row.innerHTML = `
                         <td>${formatTime(log.time)}</td>
                         <td><span class="badge ${badgeClass}">${log.type}</span></td>
@@ -1073,13 +1105,13 @@
                     else logBody.appendChild(row);
                     if (logBody.children.length > 50) logBody.removeChild(logBody.lastChild);
                     updateChart(log.latency, log.type);
-                    // Update health banner from WS broadcast
-                    if (message.global_health) {
-                        updateHealthBanner(message.global_health);
-                    }
+                    if (message.global_health) updateHealthBanner(message.global_health);
                 }
             };
-            socket.onclose = () => setTimeout(connectWebSocket, 3000);
+            socket.onclose = () => {
+                if (_activeSocket === socket) _activeSocket = null;
+                _wsRetryTimer = setTimeout(connectWebSocket, 3000);
+            };
         }
 
         function renderLogs(logs) {
@@ -1102,12 +1134,10 @@
                 logBody.appendChild(row);
             });
         }
+        // Initial connection attempt (may be unauthenticated in dev mode).
+        // The Firebase auth module below will call connectWebSocket() again
+        // once the token is ready — the singleton guard above handles the upgrade.
         connectWebSocket();
-        // Note: connectWebSocket() is also called by the Firebase auth module
-        // (after the token is ready). The first call here — without a token —
-        // is intentional for dev environments where FIREBASE_PROJECT_ID is unset.
-        // In production the auth module's call (with a token) wins and the
-        // unauthenticated connection is closed by the server before it receives any data.
 
         async function req(id, headers) {
             const ep = window.endpointData[id]; if (!ep) return;
