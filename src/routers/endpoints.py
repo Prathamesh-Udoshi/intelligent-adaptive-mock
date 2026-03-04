@@ -125,6 +125,11 @@ async def list_endpoints():
 @router.get("/admin/endpoints/{endpoint_id}/stats", dependencies=[Depends(require_auth)])
 async def get_endpoint_stats(endpoint_id: int):
     async with AsyncSessionLocal() as session:
+        ep_res = await session.execute(select(Endpoint).where(Endpoint.id == endpoint_id))
+        endpoint = ep_res.scalars().first()
+        if not endpoint:
+            raise HTTPException(status_code=404, detail=f"Endpoint {endpoint_id} not found")
+
         b_res = await session.execute(select(EndpointBehavior).where(EndpointBehavior.endpoint_id == endpoint_id))
         behavior = b_res.scalars().first()
         c_res = await session.execute(select(ChaosConfig).where(ChaosConfig.endpoint_id == endpoint_id))
@@ -132,36 +137,30 @@ async def get_endpoint_stats(endpoint_id: int):
 
         # Add real-time adaptive stats from the AI Brain
         from core.state import adaptive_detector, health_monitor
-        from core.models import Endpoint
         
-        ep_res = await session.execute(select(Endpoint).where(Endpoint.id == endpoint_id))
-        endpoint = ep_res.scalars().first()
-        
-        adaptive_stats = {}
-        if endpoint:
-            adaptive_stats = adaptive_detector.get_stats(endpoint.path_pattern)
-            # Add dynamic threshold
-            adaptive_stats["dynamic_threshold"] = adaptive_detector._get_dynamic_threshold(
-                adaptive_stats.get("mean", 0), 
-                adaptive_stats.get("std", 0)
-            )
+        adaptive_stats = adaptive_detector.get_stats(endpoint.path_pattern)
+        # Add dynamic threshold
+        adaptive_stats["dynamic_threshold"] = adaptive_detector._get_dynamic_threshold(
+            adaptive_stats.get("mean", 0), 
+            adaptive_stats.get("std", 0)
+        )
             
         health = health_monitor.get_endpoint_health(endpoint_id)
 
         return {
             "behavior": {
-                "latency_mean": behavior.latency_mean,
-                "error_rate": behavior.error_rate,
-                "status_codes": behavior.status_code_distribution,
-                "schema_preview": behavior.response_schema,
-                "request_schema": behavior.request_schema,
+                "latency_mean": behavior.latency_mean if behavior else 0.0,
+                "error_rate": behavior.error_rate if behavior else 0.0,
+                "status_codes": behavior.status_code_distribution if behavior else {},
+                "schema_preview": behavior.response_schema if behavior else None,
+                "request_schema": behavior.request_schema if behavior else None,
                 "adaptive_stats": adaptive_stats,
-                "health": health
+                "health": health,
             },
             "chaos": {
-                "level": chaos.chaos_level,
-                "active": chaos.is_active
-            }
+                "level": chaos.chaos_level if chaos else 0,
+                "active": chaos.is_active if chaos else False,
+            },
         }
 
 

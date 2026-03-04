@@ -113,8 +113,10 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
             await asyncio.sleep(injected_wait / 1000.0)
 
     # B. Injected Errors
-    error_prob = (effective_chaos / 100.0)
-    if error_prob > 0 and random.random() < min(error_prob, 0.9):
+    # Quadratic curve: chaos=30→4.5%, chaos=50→12.5%, chaos=80→32%, chaos=100→50%
+    # This ensures low chaos = occasional errors, high chaos = frequent but not guaranteed
+    error_prob = (effective_chaos / 100.0) ** 2 * 0.5
+    if error_prob > 0 and random.random() < error_prob:
         logger.warning(f"🎲 Chaos Injection: Returning 500 for {normalized} (Chaos: {effective_chaos}%)")
         latency_ms = (time.time() - start_time) * 1000
         await add_to_logs(method, normalized, 500, latency_ms, "Proxy", health_info={"status": "degraded", "health_score": 40})
@@ -197,7 +199,7 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
             async with AsyncSessionLocal() as health_session:
                 drift_check = await health_session.execute(
                     select(ContractDrift)
-                    .where(ContractDrift.endpoint_id == endpoint.id, ContractDrift.is_resolved == False)
+                    .where(ContractDrift.endpoint_id == endpoint.id, ContractDrift.is_resolved.is_(False))
                     .limit(1)
                 )
                 has_active_drift_for_health = drift_check.scalars().first() is not None
@@ -276,10 +278,13 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
             except: pass
 
         # Decide Error vs Success
+        # Base error rate from learned behavior + chaos-injected errors
+        # Chaos uses quadratic scaling: chaos=30→4.5%, chaos=50→12.5%, chaos=80→32%
         error_prob = behavior.error_rate if behavior else 0
-        error_prob += (effective_chaos / 100.0)
+        chaos_error_prob = (effective_chaos / 100.0) ** 2 * 0.5
+        error_prob = min(error_prob + chaos_error_prob, 0.5)
 
-        if random.random() < min(error_prob, 0.9):
+        if random.random() < error_prob:
             log_status = 500
             await add_to_logs(request.method, normalized, log_status, 0, "Mock")
             return JSONResponse(

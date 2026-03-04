@@ -9,6 +9,7 @@ import os
 
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, FileResponse
+from pydantic import BaseModel, field_validator
 from sqlalchemy import update
 
 from core.database import AsyncSessionLocal
@@ -222,10 +223,23 @@ async def set_active_chaos_profile(request: Request):
     raise HTTPException(status_code=400, detail="Invalid profile")
 
 
+class ChaosLevelRequest(BaseModel):
+    """Pydantic model to enforce integer type for chaos level."""
+    level: int = 0
+
+    @field_validator("level", mode="before")
+    @classmethod
+    def coerce_to_int(cls, v):
+        """Handle string-encoded numbers from the frontend (e.g. '53' → 53)."""
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            return 0
+
+
 @router.post("/admin/chaos", dependencies=[Depends(require_auth)])
-async def set_chaos_globally(request: Request):
-    data = await request.json()
-    level = data.get("level", 0)
+async def set_chaos_globally(body: ChaosLevelRequest):
+    level = max(0, min(100, body.level))  # Clamp to [0, 100]
     async with AsyncSessionLocal() as session:
         await session.execute(update(ChaosConfig).values(chaos_level=level, is_active=True))
         await session.commit()

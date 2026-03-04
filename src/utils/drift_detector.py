@@ -185,21 +185,46 @@ _FIELD_CONTEXT = {
 
 # Impact explanations by drift type
 _IMPACT_TEMPLATES = {
-    "missing_field": {
-        "high_impact": "This will break any UI component that renders or references this field.",
-        "action": "Add a null-check or optional chaining (?.) for this field in your frontend code."
+    # BREAKING
+    "field_removed": {
+        "high_impact": "This will break any UI component or client that references this field. It's a hard breaking change.",
+        "action": "Immediate: Update frontend to handle the missing field or roll back the target API."
     },
-    "new_field": {
-        "high_impact": "This is typically safe, but may indicate an upcoming API version migration.",
-        "action": "Consider updating your TypeScript types to include this new field."
+    "object_to_primitive": {
+        "high_impact": "The response was an object but is now a primitive value. Client property access (e.g. data.id) will throw errors.",
+        "action": "Coordinate with the backend team. This indicates a massive structural shift."
     },
-    "type_change": {
-        "high_impact": "Any strict comparisons (===) or type-dependent logic will fail silently.",
-        "action": "Update the field type in your data model and check all components using this field."
+    "array_to_non_array": {
+        "high_impact": "Iteration (e.g. .map() or for-loops) will crash on this field.",
+        "action": "Ensure the client can handle single-value responses or check the API versioning."
+    },
+    "non_array_to_array": {
+        "high_impact": "Field property access will fail because the value is now a list.",
+        "action": "Update frontend logic to iterate over the new array response."
     },
     "type_mismatch": {
-        "high_impact": "The entire response shape has changed, breaking all consumers.",
-        "action": "This is a major breaking change — coordinate with the backend team immediately."
+        "high_impact": "The root response structure is entirely different. Complete consumer failure.",
+        "action": "Urgent technical review of the upstream API response."
+    },
+    
+    # WARNING
+    "type_changed": {
+        "high_impact": "Silent failure in strict comparisons (===) or logic expecting specific types (e.g. string vs number).",
+        "action": "Use loose equality (==) or explicitly cast types in the client if the API is unstable."
+    },
+    
+    # INFO
+    "new_field": {
+        "high_impact": "Safe for existing consumers, but marks a change in the API version or schema evolution.",
+        "action": "Update your local types/models to take advantage of this new data."
+    },
+    "null_to_typed": {
+        "high_impact": "A previously nullable field is now returning actual data. Safe change.",
+        "action": "No action needed, but you can potentially remove some null-checks in the client."
+    },
+    "field_became_nullable": {
+        "high_impact": "Occasional 'undefined' or 'null' errors may appear if the client isn't defensive.",
+        "action": "Add optional chaining or null-guards for this field."
     }
 }
 

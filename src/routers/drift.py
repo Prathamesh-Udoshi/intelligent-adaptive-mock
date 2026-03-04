@@ -4,12 +4,11 @@ Drift Router
 Contract drift alert management: list, resolve, per-endpoint stats.
 """
 
-import datetime
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select, update, func
 
 from core.database import AsyncSessionLocal
 from core.models import ContractDrift
@@ -21,9 +20,14 @@ router = APIRouter()
 
 
 @router.get("/admin/drift-alerts", dependencies=[Depends(require_auth)])
-async def get_drift_alerts(endpoint_id: Optional[int] = None, unresolved_only: bool = False):
+async def get_drift_alerts(
+    endpoint_id: Optional[int] = None,
+    unresolved_only: bool = False,
+    limit: int = Query(default=50, ge=1, le=200, description="Max alerts to return"),
+    offset: int = Query(default=0, ge=0, description="Pagination offset"),
+):
     """
-    Get all drift alerts, optionally filtered by endpoint or resolution status.
+    Get drift alerts with pagination, optionally filtered by endpoint or resolution status.
     """
     async with AsyncSessionLocal() as session:
         query = select(ContractDrift).order_by(ContractDrift.detected_at.desc())
@@ -32,8 +36,10 @@ async def get_drift_alerts(endpoint_id: Optional[int] = None, unresolved_only: b
             query = query.where(ContractDrift.endpoint_id == endpoint_id)
 
         if unresolved_only:
-            query = query.where(ContractDrift.is_resolved == False)
+            query = query.where(ContractDrift.is_resolved.is_(False))
 
+        # Paginate
+        query = query.limit(limit).offset(offset)
         result = await session.execute(query)
         alerts = result.scalars().all()
 
@@ -65,7 +71,7 @@ async def resolve_drift_alert(alert_id: int):
             await session.execute(
                 update(ContractDrift)
                 .where(ContractDrift.id == alert_id)
-                .values(is_resolved=True, resolved_at=datetime.datetime.utcnow())
+                .values(is_resolved=True, resolved_at=func.now())
             )
             await session.commit()
             logger.info(f"✅ Alert {alert_id} marked as resolved")
@@ -83,29 +89,49 @@ async def get_endpoint_drift_stats(endpoint_id: int):
     Get drift statistics for a specific endpoint.
     """
     async with AsyncSessionLocal() as session:
-        result = await session.execute(
+        # Use SQL aggregation instead of loading all rows into Python
+        count_res = await session.execute(
+            select(func.count(ContractDrift.id))
+            .where(ContractDrift.endpoint_id == endpoint_id)
+        )
+        total_count = count_res.scalar() or 0
+
+        unresolved_res = await session.execute(
+            select(func.count(ContractDrift.id))
+            .where(
+                ContractDrift.endpoint_id == endpoint_id,
+                ContractDrift.is_resolved.is_(False),
+            )
+        )
+        unresolved_count = unresolved_res.scalar() or 0
+
+        avg_res = await session.execute(
+            select(func.avg(ContractDrift.drift_score))
+            .where(ContractDrift.endpoint_id == endpoint_id)
+        )
+        avg_score = avg_res.scalar() or 0.0
+
+        # Get the latest alert (prefer unresolved)
+        latest_res = await session.execute(
             select(ContractDrift)
             .where(ContractDrift.endpoint_id == endpoint_id)
-            .order_by(ContractDrift.detected_at.desc())
+            .order_by(
+                ContractDrift.is_resolved.asc(),  # unresolved first
+                ContractDrift.detected_at.desc(),
+            )
+            .limit(1)
         )
-        all_alerts = result.scalars().all()
-
-        unresolved_alerts = [a for a in all_alerts if not a.is_resolved]
-        unresolved_count = len(unresolved_alerts)
-
-        latest_alert = unresolved_alerts[0] if unresolved_alerts else (all_alerts[0] if all_alerts else None)
-
-        avg_score = sum(a.drift_score for a in all_alerts) / len(all_alerts) if all_alerts else 0
+        latest_alert = latest_res.scalars().first()
 
         return {
-            "total_alerts": len(all_alerts),
+            "total_alerts": total_count,
             "unresolved_alerts": unresolved_count,
-            "average_drift_score": round(avg_score, 2),
+            "average_drift_score": round(float(avg_score), 2),
             "latest_alert": {
                 "id": latest_alert.id,
-                "detected_at": latest_alert.detected_at.isoformat(),
+                "detected_at": latest_alert.detected_at.isoformat() if latest_alert.detected_at else None,
                 "drift_score": latest_alert.drift_score,
                 "drift_summary": latest_alert.drift_summary,
-                "drift_details": latest_alert.drift_details
-            } if latest_alert else None
+                "drift_details": latest_alert.drift_details,
+            } if latest_alert else None,
         }
