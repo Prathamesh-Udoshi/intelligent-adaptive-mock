@@ -895,6 +895,178 @@ contract_reporter = ContractChangeReporter()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# RESPONSE-vs-SCHEMA DRIFT DETECTOR
+# Compares the EXPECTED schema (learned over time) against the RAW response
+# body (what we ACTUALLY got). This is the correct approach because:
+#   - The SchemaLearner only ACCUMULATES types and fields; it never removes them.
+#   - Comparing two accumulated schemas will therefore never detect field removal
+#     or type narrowing because both snapshots look "same or richer."
+#   - Comparing schema-vs-raw-response catches REAL drift: missing fields, new
+#     fields, type changes relative to what we've learned to expect.
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _detect_response_drift(
+    schema_node: Dict,
+    actual: Any,
+    path: str = "$",
+) -> List[ContractChange]:
+    """
+    Compare a learned schema tree against a raw API response and return
+    a list of ContractChange objects for every difference found.
+
+    This is fundamentally different from SchemaComparator.compare() which
+    compares two schema trees. This compares a schema tree against raw data.
+    """
+    changes: List[ContractChange] = []
+
+    if not isinstance(schema_node, dict) or _META not in schema_node:
+        return changes
+
+    meta = FieldDescriptor.from_dict(schema_node.get(_META, {}))
+
+    # Need at least 2 observations to have a baseline worth comparing against
+    if meta.occurrences < 2:
+        return changes
+
+    expected_primary = meta.primary_type()
+
+    # ── If the schema expects an object, compare object keys ──────────────
+    if expected_primary == "object" and isinstance(actual, dict):
+        schema_keys = {k for k in schema_node if k not in (_META, _ITEMS)}
+        actual_keys = set(actual.keys())
+
+        # Fields we expected but are MISSING from the response
+        for key in schema_keys - actual_keys:
+            child_meta = FieldDescriptor.from_dict(
+                schema_node[key].get(_META, {}) if isinstance(schema_node[key], dict) else {}
+            )
+            # Only flag as BREAKING if the field has been seen multiple times
+            # (i.e., it's an established field, not a one-off)
+            if child_meta.occurrences >= 2:
+                changes.append(ContractChange(
+                    change_type  = ChangeType.FIELD_REMOVED,
+                    severity     = Severity.BREAKING,
+                    path         = f"{path}.{key}",
+                    old_types    = child_meta.types_seen,
+                    new_types    = set(),
+                    old_nullable = child_meta.nullable,
+                    new_nullable = False,
+                    explanation  = (
+                        f"Field `{path}.{key}` (was `{'|'.join(sorted(child_meta.types_seen)) or 'null'}`, "
+                        f"seen {child_meta.occurrences} times) is missing from this response. "
+                        f"Client code reading this field will get `undefined`."
+                    ),
+                ))
+
+        # Fields in the response that are NOT in our learned schema
+        for key in actual_keys - schema_keys:
+            actual_type = _json_type(actual[key])
+            changes.append(ContractChange(
+                change_type  = ChangeType.NEW_FIELD,
+                severity     = Severity.INFO,
+                path         = f"{path}.{key}",
+                old_types    = set(),
+                new_types    = {actual_type},
+                old_nullable = False,
+                new_nullable = actual[key] is None,
+                explanation  = (
+                    f"New field `{path}.{key}` (type: `{actual_type}`) appeared "
+                    f"in the response. Update TypeScript types to include it."
+                ),
+            ))
+
+        # Check TYPE CHANGES in common fields
+        for key in schema_keys & actual_keys:
+            child_schema = schema_node.get(key, {})
+            if not isinstance(child_schema, dict) or _META not in child_schema:
+                continue
+            child_meta = FieldDescriptor.from_dict(child_schema.get(_META, {}))
+            actual_value = actual[key]
+            actual_type = _json_type(actual_value)
+
+            # Skip null values — null is orthogonal to type
+            if actual_value is None:
+                continue
+
+            # Check if the actual type was EVER seen before
+            if child_meta.types_seen and actual_type not in child_meta.types_seen and child_meta.occurrences >= 2:
+                child_primary = child_meta.primary_type()
+                # Classify severity
+                structural_break = (
+                    (child_primary == "object" and actual_type != "object") or
+                    (child_primary == "array" and actual_type != "array") or
+                    (actual_type == "array" and child_primary != "array")
+                )
+                severity = Severity.BREAKING if structural_break else Severity.WARNING
+                change_type = (
+                    ChangeType.OBJECT_TO_PRIMITIVE if child_primary == "object" else
+                    ChangeType.ARRAY_TO_NON_ARRAY if child_primary == "array" else
+                    ChangeType.NON_ARRAY_TO_ARRAY if actual_type == "array" else
+                    ChangeType.TYPE_CHANGED
+                )
+                changes.append(ContractChange(
+                    change_type  = change_type,
+                    severity     = severity,
+                    path         = f"{path}.{key}",
+                    old_types    = child_meta.types_seen,
+                    new_types    = {actual_type},
+                    old_nullable = child_meta.nullable,
+                    new_nullable = False,
+                    explanation  = (
+                        f"Field `{path}.{key}` changed type from "
+                        f"`{'|'.join(sorted(child_meta.types_seen))}` to `{actual_type}`. "
+                        f"Seen {child_meta.occurrences} times before with the old type(s)."
+                    ),
+                ))
+
+            # Recurse into nested objects
+            if isinstance(actual_value, dict):
+                changes.extend(_detect_response_drift(child_schema, actual_value, f"{path}.{key}"))
+            elif isinstance(actual_value, list) and actual_value and _ITEMS in child_schema:
+                # Check array items against learned item schema
+                for i, item in enumerate(actual_value[:1]):  # Check first item
+                    changes.extend(_detect_response_drift(child_schema[_ITEMS], item, f"{path}.{key}[{i}]"))
+
+    # ── If schema expects an object but got a primitive ────────────────────
+    elif expected_primary == "object" and not isinstance(actual, dict):
+        actual_type = _json_type(actual)
+        if actual is not None:  # null is OK for nullable fields
+            changes.append(ContractChange(
+                change_type  = ChangeType.OBJECT_TO_PRIMITIVE,
+                severity     = Severity.BREAKING,
+                path         = path,
+                old_types    = meta.types_seen,
+                new_types    = {actual_type},
+                old_nullable = meta.nullable,
+                new_nullable = False,
+                explanation  = (
+                    f"`{path}` was always an object but is now `{actual_type}`. "
+                    f"Any code doing `field.subKey` will throw TypeError."
+                ),
+            ))
+
+    # ── If schema expects an array but got non-array ──────────────────────
+    elif expected_primary == "array" and not isinstance(actual, list):
+        actual_type = _json_type(actual)
+        if actual is not None:
+            changes.append(ContractChange(
+                change_type  = ChangeType.ARRAY_TO_NON_ARRAY,
+                severity     = Severity.BREAKING,
+                path         = path,
+                old_types    = meta.types_seen,
+                new_types    = {actual_type},
+                old_nullable = meta.nullable,
+                new_nullable = False,
+                explanation  = (
+                    f"`{path}` was always an array but is now `{actual_type}`. "
+                    f"Any array iteration (.map, .forEach) will break."
+                ),
+            ))
+
+    return changes
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CONVENIENCE FUNCTION  (drop-in replacement for learning.py's learn_schema())
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -905,46 +1077,46 @@ def learn_and_compare(
 ) -> Tuple[Dict, List[Dict]]:
     """
     High-level function that:
-      1. Retrieves the current schema for the endpoint
-      2. Learns schema from the new response
-      3. Compares old vs new and returns changes
+      1. Retrieves the current schema for the endpoint (what we EXPECT)
+      2. Compares the EXPECTED schema against the RAW response (what we GOT)
+      3. Learns from this response (accumulates into the schema)
       4. Persists the updated schema
+
+    Drift detection: compares learned schema against raw response body.
+    This correctly detects missing fields, new fields, and type changes
+    because it checks the ACTUAL data — not two accumulated schemas.
 
     Returns:
         (updated_schema, list_of_change_dicts)
         list_of_change_dicts is [] if no changes or no previous schema.
     """
+    import copy
+
     previous = schema_registry.get(endpoint)
 
-    # Deep-copy the previous schema before mutating it in-place
-    import copy
-    schema_snapshot = copy.deepcopy(previous) if previous else None
+    # ── Step 1: Detect drift BEFORE learning ──────────────────────────────
+    # Compare the existing schema (our expectations) against the raw response.
+    # Must happen BEFORE learn() updates the schema with this response's data.
+    change_dicts: List[Dict] = []
+    if previous is not None and isinstance(response_body, (dict, list)):
+        raw_changes = _detect_response_drift(previous, response_body)
+        change_dicts = [c.to_dict() for c in raw_changes]
 
-    # Learn from this response (mutates / creates the schema)
+        if raw_changes:
+            report = contract_reporter.generate(raw_changes, endpoint=endpoint)
+            if report["breaking"] > 0:
+                logger.warning(f"🚨 CONTRACT DRIFT [{endpoint}]: {report['summary']}")
+            elif report["warnings"] > 0:
+                logger.warning(f"🟡 CONTRACT CHANGE [{endpoint}]: {report['summary']}")
+            else:
+                logger.info(f"🟢 SCHEMA INFO [{endpoint}]: {report['summary']}")
+            logger.debug(f"\n{report['narrative']}")
+
+    # ── Step 2: Learn from this response (accumulate into schema) ─────────
     updated = schema_learner.learn(
         copy.deepcopy(previous) if previous else None,
         response_body,
     )
     schema_registry.set(endpoint, updated)
-
-    # Only compare when we have a previous schema (not the very first observation)
-    if schema_snapshot is None:
-        return updated, []
-
-    changes = schema_comparator.compare(schema_snapshot, updated)
-
-    # Filter to changes that have meaningful severity (skip pure INFO unless caller wants them)
-    change_dicts = [c.to_dict() for c in changes]
-
-    if changes:
-        report = contract_reporter.generate(changes, endpoint=endpoint)
-        # Log at appropriate levels
-        if report["breaking"] > 0:
-            logger.warning(f"🚨 CONTRACT DRIFT [{endpoint}]: {report['summary']}")
-        elif report["warnings"] > 0:
-            logger.warning(f"🟡 CONTRACT CHANGE [{endpoint}]: {report['summary']}")
-        else:
-            logger.info(f"🟢 SCHEMA INFO [{endpoint}]: {report['summary']}")
-        logger.debug(f"\n{report['narrative']}")
 
     return updated, change_dicts

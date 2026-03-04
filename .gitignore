@@ -7,3 +7,5 @@ data/*.db
 docs/
 DEPLOYMENT.md
 .env
+
+demo_script.md.resolved
