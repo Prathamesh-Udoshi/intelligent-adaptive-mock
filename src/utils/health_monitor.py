@@ -43,10 +43,10 @@ class HealthMonitor:
     MIN_OBSERVATIONS = 5                # Minimum observations before anomaly detection
     
     # Penalty weights for health score calculation
-    LATENCY_PENALTY = 15        # Points deducted for latency anomaly
-    ERROR_SPIKE_PENALTY = 25    # Points deducted for error spike
-    SIZE_ANOMALY_PENALTY = 10   # Points deducted for size anomaly
-    DRIFT_PENALTY = 20          # Points deducted for active contract drift
+    LATENCY_PENALTY = 30        # Points deducted for latency anomaly (was 15)
+    ERROR_SPIKE_PENALTY = 30    # Points deducted for error spike (was 25)
+    SIZE_ANOMALY_PENALTY = 15   # Points deducted for size anomaly (was 10)
+    DRIFT_PENALTY = 25          # Points deducted for active contract drift (was 20)
     
     def __init__(self):
         # Sliding window: endpoint_id -> list of recent observations
@@ -125,7 +125,9 @@ class HealthMonitor:
             latency_detail = detector.get_anomaly_detail(path_pattern, latency_ms)
             latency_anomaly = latency_detail["is_anomaly"]
             if latency_anomaly:
-                severity_icon = "high" if latency_detail["z_score"] > 6.0 else "medium"
+                # Flag as high severity if z_score is more than 2x the dynamic threshold
+                dyn_thresh = latency_detail.get("dynamic_threshold", 3.0)
+                severity_icon = "high" if latency_detail["z_score"] > (dyn_thresh * 1.5) else "medium"
                 anomalies.append({
                     "type": "latency_spike",
                     "severity": severity_icon,
@@ -133,9 +135,8 @@ class HealthMonitor:
                     "current": round(latency_ms, 1),
                     "baseline": latency_detail["mean"],
                     "z_score": latency_detail["z_score"],
-                    "threshold_z": latency_detail["dynamic_threshold"],
-                    "volatility": latency_detail["volatility"],
-                    "threshold": round(latency_detail["mean"] + latency_detail["dynamic_threshold"] * latency_detail["std"], 1)
+                    "dynamic_threshold": dyn_thresh,
+                    "threshold": round(latency_detail["mean"] + dyn_thresh * latency_detail["std"], 1)
                 })
         # Fallback: if no detector provided, use legacy window-based detection
         elif len(window) >= self.MIN_OBSERVATIONS:

@@ -30,7 +30,7 @@ from services.learning import (
 from utils.normalization import normalize_path
 from utils.schema_learner import generate_mock_response
 from utils.ai_mock_generator import generate_ai_mock
-from utils.schema_intelligence import learn_and_compare, contract_reporter
+from utils.schema_intelligence import learn_and_compare
 
 logger = logging.getLogger("mock_platform")
 
@@ -90,6 +90,39 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
     target_full_url = f"{state.TARGET_URL}/{path}"
     start_time = time.time()
 
+    # --- CHAOS INJECTION (Proxy Mode) ---
+    # Apply chaos effects (latency, errors) from profiles and sliders even in Proxy mode
+    # so that the Health Monitor has something to detect during a demo.
+    profile_key = PLATFORM_STATE.get("active_chaos_profile", "normal")
+    profile = CHAOS_PROFILES.get(profile_key, CHAOS_PROFILES["normal"])
+    
+    # Global slider + Profile chaos
+    effective_chaos = chaos.chaos_level if chaos and chaos.chaos_level > 0 else 0
+    if profile.get("global_chaos", 0) > 0:
+        effective_chaos = max(effective_chaos, profile["global_chaos"])
+
+    # A. Injected Latency
+    latency_boost = profile.get("latency_boost", 0)
+    method_boosts = profile.get("latency_boost_methods", {})
+    if request.method in method_boosts:
+        latency_boost = max(latency_boost, method_boosts[request.method])
+    
+    if effective_chaos > 0 or latency_boost > 0:
+        injected_wait = (effective_chaos * 10) + latency_boost
+        if injected_wait > 0:
+            await asyncio.sleep(injected_wait / 1000.0)
+
+    # B. Injected Errors
+    error_prob = (effective_chaos / 100.0)
+    if error_prob > 0 and random.random() < min(error_prob, 0.9):
+        logger.warning(f"🎲 Chaos Injection: Returning 500 for {normalized} (Chaos: {effective_chaos}%)")
+        latency_ms = (time.time() - start_time) * 1000
+        await add_to_logs(method, normalized, 500, latency_ms, "Proxy", health_info={"status": "degraded", "health_score": 40})
+        return JSONResponse(
+            content={"error": "Chaos Injected (Simulated Backend Failure)", "profile": profile["name"]},
+            status_code=500
+        )
+
     # Pre-read request body for learning
     req_body_bytes = await request.body()
     try:
@@ -130,20 +163,16 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                 background_tasks.add_task(process_learning_buffer)
 
         # CONTRACT DRIFT DETECTION (Schema Intelligence Engine)
+        # Key must match the key used by the learning engine: "METHOD /path"
         has_drift_detected = False
         if resp_body_json and isinstance(resp_body_json, (dict, list)):
-            _, changes = learn_and_compare(normalized, resp_body_json, req_body_json)
+            schema_key = f"{method} {normalized}"
+            _, changes = learn_and_compare(schema_key, resp_body_json, req_body_json)
 
             # Only flag BREAKING or WARNING changes as "drift" worth alerting on
             severe_changes = [c for c in changes if c["severity"] in ("BREAKING", "WARNING")]
             if severe_changes:
                 has_drift_detected = True
-                report = contract_reporter.generate(
-                    # Re-build ContractChange objects from dicts for the reporter
-                    # (generate() also accepts pre-built dicts via the change_dicts path)
-                    [],   # Empty — narrative already logged by learn_and_compare
-                    endpoint=normalized
-                )
                 drift_score  = min(100.0, len([c for c in changes if c["severity"] == "BREAKING"]) * 10.0
                                         + len([c for c in changes if c["severity"] == "WARNING"]) * 5.0)
                 drift_summary = f"{len(severe_changes)} contract change(s): " + \
@@ -235,7 +264,8 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
         profile = CHAOS_PROFILES.get(profile_key, CHAOS_PROFILES["normal"])
 
         # Apply Chaos Level
-        effective_chaos = chaos.chaos_level if chaos and chaos.is_active else 0
+        # Respect chaos_level > 0 regardless of is_active flag so the UI slider always works
+        effective_chaos = chaos.chaos_level if chaos and chaos.chaos_level > 0 else 0
         if profile.get("global_chaos", 0) > 0:
             effective_chaos = max(effective_chaos, profile["global_chaos"])
 

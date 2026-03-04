@@ -41,12 +41,13 @@ logger = logging.getLogger("mock_platform")
 # CONFIGURATION
 # ──────────────────────────────────────────────────────
 
-MIN_LEARNING_SAMPLES: int = 5        # Requests before anomaly detection activates.
-                                     # Welford's algorithm is valid from n=3;
-                                     # 5 balances speed of learning vs false positives.
-ANOMALY_Z_THRESHOLD: float = 3.0    # Default fallback (used before enough data is learned)
-ADAPTIVE_Z_MIN: float = 2.0         # Floor: ultra-strict for fast endpoints (e.g. /health)
-ADAPTIVE_Z_MAX: float = 5.5         # Ceiling: lenient for slow AI/LLM endpoints
+MIN_LEARNING_SAMPLES: int = 3        # Requests before anomaly detection activates.
+                                     # Lowered from 5 to 3 so detection kicks in quickly
+                                     # on endpoints with sparse traffic (e.g. AI endpoints).
+ANOMALY_Z_THRESHOLD: float = 2.5    # Default fallback (used before enough data is learned)
+ADAPTIVE_Z_MIN: float = 1.8         # Floor: strict for fast endpoints (e.g. /health)
+ADAPTIVE_Z_MAX: float = 3.5         # Ceiling: lenient for slow AI/LLM endpoints
+                                     # (was 5.5 — lowered so chaos spikes reliably trigger)
 LOG_SCALE_MIN_MS: float = 10.0      # Clamp floor for mean (below this = ultra-fast)
 LOG_SCALE_MAX_MS: float = 10000.0   # Clamp ceiling for mean (above this = extreme LLM)
 DECAY_FACTOR: float = 0.98
