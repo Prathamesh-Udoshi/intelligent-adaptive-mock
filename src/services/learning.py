@@ -97,9 +97,13 @@ async def add_to_logs(method: str, path: str, status: int, latency: int, type: s
 
 # ── Background Tasks ──
 
-async def store_drift_alert(endpoint_id: int, drift_score: float, drift_summary: str, drift_details: List[Dict]):
+async def store_drift_alert(endpoint_id: int, drift_score: float, drift_summary: str, drift_details: List[Dict], endpoint_path: str = ""):
     """Stores or updates a contract drift alert in the database. Prevents duplicates."""
+    from utils.drift_detector import generate_llm_drift_report
     try:
+        # Generate the rich AI narrative in the background
+        narration = await generate_llm_drift_report(endpoint_path, drift_details)
+
         async with AsyncSessionLocal() as session:
             res = await session.execute(
                 select(ContractDrift).where(
@@ -115,6 +119,7 @@ async def store_drift_alert(endpoint_id: int, drift_score: float, drift_summary:
                 existing.drift_score = drift_score
                 existing.drift_summary = drift_summary
                 existing.drift_details = drift_details
+                existing.drift_narration = narration
 
                 # AUTO-CLEANUP orphaned duplicates
                 if len(existing_alerts) > 1:
@@ -129,7 +134,8 @@ async def store_drift_alert(endpoint_id: int, drift_score: float, drift_summary:
                     endpoint_id=endpoint_id,
                     drift_score=drift_score,
                     drift_summary=drift_summary,
-                    drift_details=drift_details
+                    drift_details=drift_details,
+                    drift_narration=narration
                 )
                 session.add(drift_alert)
                 logger.info(f"🚨 New drift alert stored for endpoint {endpoint_id}")

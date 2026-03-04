@@ -185,7 +185,8 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                     endpoint.id,
                     drift_score,
                     drift_summary,
-                    severe_changes
+                    severe_changes,
+                    normalized
                 )
 
         # HEALTH MONITORING (Adaptive Anomaly Detection)

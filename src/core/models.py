@@ -87,6 +87,7 @@ class ContractDrift(Base):
     detected_at  = Column(DateTime, default=_utcnow, server_default=func.now())
     drift_score  = Column(Float, default=0.0)      # 0–100 severity score
     drift_summary = Column(String, nullable=True)   # Human-readable summary
+    drift_narration = Column(String, nullable=True) # LLM-generated detailed report
     drift_details = Column(JSON, nullable=True)
 
     # Status tracking

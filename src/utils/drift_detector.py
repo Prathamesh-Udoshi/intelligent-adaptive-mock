@@ -229,17 +229,26 @@ _IMPACT_TEMPLATES = {
 }
 
 # Severity labels
+# Severity labels (mapped for both old and new engine)
 _SEVERITY_LABELS = {
+    # Old/Compatibility
     "high": "🔴 BREAKING",
     "medium": "🟡 WARNING",
-    "low": "🟢 INFO"
+    "low": "🟢 INFO",
+    
+    # New (schema_intelligence)
+    "breaking": "🔴 BREAKING",
+    "warning":  "🟡 WARNING",
+    "info":     "🟢 INFO"
 }
 
 
 def _extract_field_name(path: str) -> str:
-    """Extracts the last field name from a JSON path like $.data.users[0].avatar_url"""
-    # Remove array indices and split
-    clean = path.replace("[0]", "").replace("[", ".").replace("]", "")
+    """Extracts the last field name from a JSON path like $.data.users[52].avatar_url"""
+    import re
+    # Remove array indices [0], [123], etc.
+    clean = re.sub(r'\[\d+\]', '', path) if path else "$"
+    # Split by dots and return last part
     parts = clean.split(".")
     return parts[-1] if parts else path
 
@@ -284,10 +293,14 @@ def narrate_drift(drift_issues: List[Dict[str, Any]], endpoint_path: str = "") -
     if not drift_issues:
         return "✅ No contract changes detected. The API response matches the learned schema."
     
-    # Group issues by severity
-    high = [i for i in drift_issues if i.get("severity") == "high"]
-    medium = [i for i in drift_issues if i.get("severity") == "medium"]
-    low = [i for i in drift_issues if i.get("severity") == "low"]
+    # Group issues by severity (case-insensitive and support multiple names)
+    def is_high(s): return s and s.lower() in ["high", "breaking"]
+    def is_medium(s): return s and s.lower() in ["medium", "warning"]
+    def is_low(s): return s and s.lower() in ["low", "info"]
+
+    high = [i for i in drift_issues if is_high(i.get("severity"))]
+    medium = [i for i in drift_issues if is_medium(i.get("severity"))]
+    low = [i for i in drift_issues if is_low(i.get("severity"))]
     
     lines = []
     
@@ -341,13 +354,13 @@ def _format_issue_headline(issue: Dict, field_name: str) -> str:
     """Creates a clear one-line headline for a drift issue."""
     issue_type = issue.get("type", "unknown")
     
-    if issue_type == "missing_field":
+    if issue_type == "missing_field" or issue_type == "field_removed":
         return f'The "{field_name}" field has been REMOVED from the response'
     
     elif issue_type == "new_field":
         return f'A new "{field_name}" field has APPEARED in the response'
     
-    elif issue_type == "type_change":
+    elif issue_type == "type_change" or issue_type == "type_changed":
         expected = _humanize_type(issue.get("expected", "?"))
         actual = _humanize_type(issue.get("actual", "?"))
         return f'The "{field_name}" field CHANGED TYPE from {expected} to {actual}'
@@ -358,3 +371,73 @@ def _format_issue_headline(issue: Dict, field_name: str) -> str:
         return f'Response root type changed from {expected} to {actual}'
     
     return issue.get("message", f"Unknown change in {field_name}")
+
+
+# ──────────────────────────────────────────────────────
+# LLM-GENERATED DRIFT NARRATOR
+# ──────────────────────────────────────────────────────
+
+_DRIFT_LLM_SYSTEM_PROMPT = """\
+You are an expert Backend Engineer and API Architect. Your task is to narrate a "Contract Drift Report" for a developer.
+You will be given a list of technical differences between a "Learned Schema" (what we expected) and the "Actual Response" (what just happened).
+
+Guidelines:
+1. Be professional, direct, and slightly cautious (like a Senior Dev).
+2. For each change, explain WHY it matters and what might BREAK in the frontend or client code.
+3. Use Markdown for formatting (bolding important fields, using backticks for paths).
+4. Categorize by BREAKING, WARNING, and INFO.
+5. Provide specific fixes (e.g., "Add optional chaining", "Update TypeScript interface").
+6. Keep the tone helpful.
+7. Return the report in plain text with markdown. Do NOT use code blocks for the whole report.
+"""
+
+async def generate_llm_drift_report(endpoint_path: str, drift_issues: List[Dict]) -> str:
+    """
+    Leverages OpenAI to generate a sophisticated, human-readable drift report.
+    Falls back to the rule-based narrator if OpenAI is unavailable.
+    """
+    import os
+    import json
+    api_key = os.environ.get("OPENAI_API_KEY")
+    
+    if not api_key:
+        return narrate_drift(drift_issues, endpoint_path)
+
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=api_key)
+        
+        # Prepare content for LLM
+        formatted_issues = []
+        for i in drift_issues:
+            formatted_issues.append({
+                "path": i.get("path"),
+                "type": i.get("type") or i.get("change_type"),
+                "severity": i.get("severity"),
+                "details": i.get("message") or i.get("explanation")
+            })
+
+        user_prompt = f"Endpoint: {endpoint_path}\n\nTechnical Drift Details:\n{json.dumps(formatted_issues, indent=2)}"
+        
+        completion = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": _DRIFT_LLM_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=1000
+        )
+        
+        report = completion.choices[0].message.content.strip()
+        if not report:
+            raise ValueError("Empty response from LLM")
+            
+        return report
+
+    except Exception as e:
+        import logging
+        logging.getLogger("mock_platform").error(f"Failed to generate LLM drift report: {e}")
+        # Fall back to rule-based narrator
+        return narrate_drift(drift_issues, endpoint_path)
+

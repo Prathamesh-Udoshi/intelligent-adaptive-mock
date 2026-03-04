@@ -100,7 +100,7 @@ async def get_explorer_overview(search: Optional[str] = None, limit: int = 10, o
                         "drift_score": latest_alert.drift_score or 0.0,
                         "drift_summary": latest_alert.drift_summary or "Drift Detected",
                         "drift_details": details,
-                        "drift_narration": narrate_drift(details, endpoint_path=ep.path_pattern)
+                        "drift_narration": latest_alert.drift_narration or narrate_drift(details, endpoint_path=ep.path_pattern)
                     }
 
                 # 3. Build response item
