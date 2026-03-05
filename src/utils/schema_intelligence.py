@@ -42,7 +42,7 @@ Usage (middleware example):
 import json
 import os
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger("mock_platform")
@@ -100,7 +100,7 @@ def _json_type(value: Any) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.utcnow().isoformat()
 
 
 # ──────────────────────────────────────────────────────────────────────────────

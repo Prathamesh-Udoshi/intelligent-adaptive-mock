@@ -115,7 +115,7 @@ async def store_drift_alert(endpoint_id: int, drift_score: float, drift_summary:
 
             if existing_alerts:
                 existing = existing_alerts[0]
-                existing.detected_at = datetime.datetime.now(datetime.timezone.utc)
+                existing.detected_at = datetime.datetime.utcnow()
                 existing.drift_score = drift_score
                 existing.drift_summary = drift_summary
                 existing.drift_details = drift_details
@@ -125,7 +125,7 @@ async def store_drift_alert(endpoint_id: int, drift_score: float, drift_summary:
                 if len(existing_alerts) > 1:
                     for orphaned in existing_alerts[1:]:
                         orphaned.is_resolved = True
-                        orphaned.resolved_at = datetime.datetime.now(datetime.timezone.utc)
+                        orphaned.resolved_at = datetime.datetime.utcnow()
                     logger.info(f"🧹 Cleaned up {len(existing_alerts)-1} orphaned alerts for endpoint {endpoint_id}")
 
                 logger.info(f"🔄 Updated existing drift alert for endpoint {endpoint_id}")

@@ -60,6 +60,7 @@ async def resolve_drift_alert(alert_id: int):
     """
     Mark a drift alert as resolved.
     """
+    import datetime
     try:
         async with AsyncSessionLocal() as session:
             res = await session.execute(select(ContractDrift).where(ContractDrift.id == alert_id))
@@ -71,7 +72,7 @@ async def resolve_drift_alert(alert_id: int):
             await session.execute(
                 update(ContractDrift)
                 .where(ContractDrift.id == alert_id)
-                .values(is_resolved=True, resolved_at=func.now())
+                .values(is_resolved=True, resolved_at=datetime.datetime.utcnow())
             )
             await session.commit()
             logger.info(f"✅ Alert {alert_id} marked as resolved")

@@ -222,7 +222,7 @@ def export_all_typescript(endpoints: list) -> str:
     output_lines = [
         "// ════════════════════════════════════════════════════════════",
         "// Auto-Generated TypeScript Interfaces",
-        f"// Generated from learned API traffic on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"// Generated from learned API traffic on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}",
         "// Intelligent Adaptive Mock Platform",
         "// ════════════════════════════════════════════════════════════",
         "",
@@ -315,7 +315,7 @@ def export_all_pydantic(endpoints: list) -> str:
     output_lines = [
         "# ════════════════════════════════════════════════════════════",
         "# Auto-Generated Pydantic Models",
-        f"# Generated from learned API traffic on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"# Generated from learned API traffic on {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}",
         "# Intelligent Adaptive Mock Platform",
         "# ════════════════════════════════════════════════════════════",
         "",
@@ -410,7 +410,7 @@ def export_all_json_schema(endpoints: list) -> dict:
     result = {
         "_meta": {
             "generator": "Intelligent Adaptive Mock Platform",
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
             "schema_version": "https://json-schema.org/draft/2020-12/schema"
         },
         "endpoints": {}

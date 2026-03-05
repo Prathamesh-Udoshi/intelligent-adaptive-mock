@@ -22,8 +22,8 @@ Base = declarative_base()
 
 
 def _utcnow():
-    """UTC-aware timestamp helper for Python-side defaults."""
-    return datetime.datetime.now(datetime.timezone.utc)
+    """Naive UTC timestamp helper for Python-side defaults."""
+    return datetime.datetime.utcnow()
 
 
 class Endpoint(Base):
@@ -33,7 +33,7 @@ class Endpoint(Base):
     method      = Column(String, nullable=False)
     path_pattern = Column(String, nullable=False)   # Normalised, e.g. /users/{id}
     target_url  = Column(String, nullable=False)
-    created_at  = Column(DateTime, default=_utcnow, server_default=func.now())
+    created_at  = Column(DateTime, default=_utcnow, nullable=False)
 
     # Prevent duplicate (method, path_pattern) rows from race conditions
     __table_args__ = (
@@ -84,7 +84,7 @@ class ContractDrift(Base):
     endpoint_id = Column(Integer, ForeignKey("endpoints.id"))
 
     # Drift metadata
-    detected_at  = Column(DateTime, default=_utcnow, server_default=func.now())
+    detected_at  = Column(DateTime, default=_utcnow, nullable=False)
     drift_score  = Column(Float, default=0.0)      # 0–100 severity score
     drift_summary = Column(String, nullable=True)   # Human-readable summary
     drift_narration = Column(String, nullable=True) # LLM-generated detailed report
@@ -104,7 +104,7 @@ class HealthMetric(Base):
     endpoint_id = Column(Integer, ForeignKey("endpoints.id"))
 
     # Snapshot timestamp
-    recorded_at = Column(DateTime, default=_utcnow, server_default=func.now())
+    recorded_at = Column(DateTime, default=_utcnow, nullable=False)
 
     # Measurements
     latency_ms          = Column(Float,   default=0.0)
