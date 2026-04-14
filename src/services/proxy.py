@@ -20,7 +20,7 @@ from core.database import AsyncSessionLocal
 import core.state as state
 from core.state import (
     PLATFORM_STATE, CHAOS_PROFILES, LEARNING_BUFFER,
-    buffer_lock, health_monitor, adaptive_detector
+    buffer_lock, health_monitor, adaptive_detector, lstm_predictor
 )
 from core.models import EndpointBehavior, ChaosConfig, ContractDrift
 from services.learning import (
@@ -195,6 +195,17 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
         # Feed this latency into the Welford detector — updates per-endpoint baseline
         adaptive_detector.update(normalized, latency_ms)
 
+        # Feed observation into LSTM predictor buffer (for multi-signal ML detection)
+        lstm_prediction = None
+        if lstm_predictor is not None:
+            lstm_predictor.feed(
+                endpoint=normalized,
+                latency_ms=latency_ms,
+                is_error=proxy_resp.status_code >= 400,
+                response_size=response_size,
+            )
+            lstm_prediction = lstm_predictor.predict(normalized)
+
         has_active_drift_for_health = has_drift_detected
         if not has_active_drift_for_health and behavior:
             async with AsyncSessionLocal() as health_session:
@@ -214,6 +225,7 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
             learned_error_rate=behavior.error_rate if behavior else 0,
             has_active_drift=has_active_drift_for_health,
             detector=adaptive_detector,         # ← Welford-based latency detector
+            lstm_prediction=lstm_prediction,    # ← LSTM multi-signal detector
         )
 
         # Log anomalies to console
@@ -221,6 +233,10 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
             for anomaly in health_result["anomalies"]:
                 severity_icon = "🔴" if anomaly["severity"] == "high" else "🟡"
                 logger.warning(f"{severity_icon} HEALTH ANOMALY [{normalized}]: {anomaly['message']}")
+
+        # Log LSTM-specific anomalies
+        if lstm_prediction and lstm_prediction.get("is_anomaly"):
+            logger.warning(f"🧠 LSTM ANOMALY [{normalized}]: {lstm_prediction['message']}")
 
         # Store health metric in background
         background_tasks.add_task(

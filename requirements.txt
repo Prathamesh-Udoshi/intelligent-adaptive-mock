@@ -13,3 +13,8 @@ PyJWT
 python-dotenv
 alembic
 openai
+
+# ML — LSTM Autoencoder for multi-signal anomaly detection
+torch --index-url https://download.pytorch.org/whl/cpu
+scikit-learn
+pandas

@@ -47,6 +47,7 @@ class HealthMonitor:
     ERROR_SPIKE_PENALTY = 30    # Points deducted for error spike (was 25)
     SIZE_ANOMALY_PENALTY = 15   # Points deducted for size anomaly (was 10)
     DRIFT_PENALTY = 25          # Points deducted for active contract drift (was 20)
+    LSTM_ANOMALY_PENALTY = 20   # Points deducted when LSTM detects multi-signal anomaly
     
     def __init__(self):
         # Sliding window: endpoint_id -> list of recent observations
@@ -73,6 +74,7 @@ class HealthMonitor:
         learned_error_rate: float = 0.0,
         has_active_drift: bool = False,
         detector=None,             # AdaptiveAnomalyDetector instance (handles latency)
+        lstm_prediction=None,      # LSTM Autoencoder prediction (multi-signal ML detection)
         # Legacy params kept for backward compatibility but no longer used:
         learned_latency_mean: float = 0.0,
         learned_latency_std: float = 0.0,
@@ -82,6 +84,7 @@ class HealthMonitor:
 
         Latency anomaly detection is fully delegated to AdaptiveAnomalyDetector.
         Error rate and response size anomalies are computed from sliding windows here.
+        LSTM multi-signal anomalies are incorporated when a trained model is available.
 
         Returns a health assessment dict:
         {
@@ -91,6 +94,7 @@ class HealthMonitor:
             "latency_anomaly": bool,
             "error_spike": bool,
             "size_anomaly": bool,
+            "lstm_anomaly": bool,
         }
         """
         anomalies = []
@@ -199,7 +203,23 @@ class HealthMonitor:
                         "ratio": round(size_ratio, 2)
                     })
         
-        # --- 4. CALCULATE HEALTH SCORE ---
+        # --- 4. LSTM MULTI-SIGNAL ANOMALY (neural network detection) ---
+        lstm_anomaly = False
+        if lstm_prediction and lstm_prediction.get("is_anomaly") and lstm_prediction.get("model_status") == "active":
+            # Only flag as LSTM anomaly if Welford DIDN'T already catch it
+            # (avoids double-counting the same anomaly)
+            if not latency_anomaly:
+                lstm_anomaly = True
+                anomalies.append({
+                    "type": "lstm_anomaly",
+                    "severity": lstm_prediction.get("severity", "medium"),
+                    "message": lstm_prediction.get("message", "LSTM detected multi-signal anomaly"),
+                    "anomaly_score": lstm_prediction.get("anomaly_score", 0),
+                    "threshold": lstm_prediction.get("threshold", 0),
+                    "confidence": lstm_prediction.get("confidence", 0),
+                })
+
+        # --- 5. CALCULATE HEALTH SCORE ---
         score = 100.0
         
         if latency_anomaly:
@@ -212,6 +232,10 @@ class HealthMonitor:
         
         if size_anomaly:
             score -= self.SIZE_ANOMALY_PENALTY
+
+        if lstm_anomaly:
+            severity_mult = 1.5 if lstm_prediction.get("severity") == "high" else 1.0
+            score -= self.LSTM_ANOMALY_PENALTY * severity_mult
         
         if has_active_drift:
             score -= self.DRIFT_PENALTY
@@ -233,6 +257,7 @@ class HealthMonitor:
             "latency_anomaly": latency_anomaly,
             "error_spike": error_spike,
             "size_anomaly": size_anomaly,
+            "lstm_anomaly": lstm_anomaly,
             "has_drift": has_active_drift,
             "observations": len(window),
             "endpoint_id": endpoint_id,
@@ -284,7 +309,7 @@ class HealthMonitor:
         scores = [h["health_score"] for h in self._health_cache.values()]
         anomaly_count = sum(
             1 for h in self._health_cache.values() 
-            if h["latency_anomaly"] or h["error_spike"] or h["size_anomaly"]
+            if h["latency_anomaly"] or h["error_spike"] or h["size_anomaly"] or h.get("lstm_anomaly", False)
         )
         
         critical = [

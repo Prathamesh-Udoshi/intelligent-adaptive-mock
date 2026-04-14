@@ -70,3 +70,13 @@ health_monitor = HealthMonitor()
 # No hardcoded baselines — everything is learned from real traffic.
 adaptive_detector = AdaptiveAnomalyDetector()
 
+# ── LSTM Anomaly Predictor (trained neural network: multi-signal anomaly detection) ──
+# Augments Welford with a locally trained LSTM Autoencoder that detects complex
+# multi-signal patterns (latency + errors + response size + time-of-day).
+# Gracefully falls back to no-op if PyTorch is not installed or no model is trained.
+try:
+    from ml.inference.anomaly_predictor import AnomalyPredictor
+    lstm_predictor = AnomalyPredictor()
+except ImportError:
+    lstm_predictor = None  # PyTorch not installed — ML features disabled
+

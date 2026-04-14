@@ -2,6 +2,7 @@ __pycache__/
 *.tmp
 data/*.json
 data/*.db
+data/ml_models/
 !data/.keep
 .venv
 docs/

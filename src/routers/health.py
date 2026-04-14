@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func as sa_func
 
 from core.database import AsyncSessionLocal
-from core.state import health_monitor, adaptive_detector
+from core.state import health_monitor, adaptive_detector, lstm_predictor
 from core.models import HealthMetric, Endpoint
 from core.auth import require_auth
 
@@ -95,6 +95,7 @@ async def get_all_health():
       - global: aggregated platform score, status, counts
       - endpoints: per-endpoint health snapshots (latest cache)
       - detector: adaptive detector stats (learned baselines per path)
+      - lstm: LSTM neural network status and training info
     """
     global_health = health_monitor.get_global_health()
     endpoint_health = health_monitor.get_all_endpoint_health()
@@ -114,6 +115,12 @@ async def get_all_health():
             } if stats.get("count", 0) > 0 else None,
         })
 
+    # LSTM predictor stats
+    lstm_stats = lstm_predictor.get_stats() if lstm_predictor else {
+        "model_loaded": False,
+        "message": "PyTorch not installed — ML features disabled",
+    }
+
     return {
         "global": global_health,
         "endpoints": enriched_endpoints,
@@ -128,6 +135,7 @@ async def get_all_health():
                 if s["count"] >= 3
             ),
         },
+        "lstm": lstm_stats,
     }
 
 
@@ -276,3 +284,74 @@ async def reset_all_stats():
         "cleared_paths": cleared_paths,
         "message": "All baselines wiped. The AI will re-learn from fresh traffic.",
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# LSTM MODEL ENDPOINTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+@router.get("/admin/lstm/status", dependencies=[Depends(require_auth)])
+async def get_lstm_status():
+    """
+    Returns the current status of the LSTM Anomaly Predictor:
+      - Whether a model is loaded
+      - Training statistics (when, how many sequences, etc.)
+      - Prediction counts and anomaly rate
+    """
+    if lstm_predictor is None:
+        return {
+            "status": "disabled",
+            "message": "PyTorch not installed. Install with: pip install torch",
+        }
+
+    return {
+        "status": "active" if lstm_predictor.is_active else "untrained",
+        **lstm_predictor.get_stats(),
+    }
+
+
+@router.post("/admin/lstm/train", dependencies=[Depends(require_auth)])
+async def trigger_lstm_training():
+    """
+    Manually trigger LSTM Autoencoder training.
+
+    This extracts normal traffic data from the health_metrics table,
+    trains the model, and hot-swaps it into the running predictor.
+
+    Use this when you've accumulated enough traffic and want to start
+    ML-based anomaly detection immediately without waiting for the
+    auto-retrain loop.
+    """
+    if lstm_predictor is None:
+        raise HTTPException(
+            status_code=503,
+            detail="PyTorch not installed. Install with: pip install torch",
+        )
+
+    try:
+        from ml.auto_retrain import _run_training
+
+        logger.info("🧠 Manual LSTM training triggered...")
+        result = await _run_training()
+
+        if result is None:
+            return {
+                "status": "skipped",
+                "message": (
+                    "Not enough training data. Need at least 50 normal observations "
+                    "per endpoint. Send more traffic through the proxy first."
+                ),
+            }
+
+        if result.get("status") == "success":
+            # Hot-swap the new model
+            lstm_predictor.reload_model()
+
+        return {
+            "status": "success",
+            **result,
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Manual LSTM training failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Training failed: {str(e)}")

@@ -56,6 +56,14 @@ async def startup():
     asyncio.create_task(learning_loop())
     logger.info("🧠 Learning engine started (Processing every 5s)")
 
+    # Start the LSTM auto-retrain loop (trains neural network on accumulated data)
+    try:
+        from ml.auto_retrain import retrain_loop
+        asyncio.create_task(retrain_loop())
+        logger.info("🔬 LSTM auto-retrain loop started (checks every 30min)")
+    except ImportError:
+        logger.info("ℹ️ PyTorch not installed — LSTM ML features disabled")
+
 # ── Shutdown ──
 @app.on_event("shutdown")
 async def shutdown():
