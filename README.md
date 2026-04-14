@@ -177,11 +177,25 @@ The platform continuously monitors every proxied request against learned behavio
 | **Response Size Drift** | Response body size changes >3x from average | Detects data truncation, empty payloads, or inflated responses |
 | **Adaptive Volatility (CV)** | AI adjusts sensitivity based on endpoint stability | High sensitivity for stable APIs; forgiving for jittery LLM/Search APIs |
 
+### 🧠 Hybrid Anomaly Detection (Dual-Engine)
+
+The platform utilizes a **Neuro-Cognitive Hybrid Engine** to detect issues that traditional trackers miss:
+
+1.  **Welford (Statistical):** Fast, low-overhead detection for immediate latency and size spikes.
+2.  **LSTM Autoencoder (Neural):** A deep learning model that learns the **pattern** of your traffic. It detects "silent" anomalies where latency is normal but the relationship between variables is broken.
+
 ### 🧠 Adaptive AI Thresholding (Z-Score Dynamic Tuning)
 
 Unlike static monitoring tools, the platform learns the **volatility** of every endpoint. It calculates the **Coefficient of Variation (CV)** to determine how much "noise" is normal:
 - **Stable Endpoints:** Threshold shrinks to **2.0σ**. Any tiny deviation is flagged as an anomaly.
 - **Volatile Endpoints (LLMs/Search):** Threshold expands up to **6.0σ**. The AI learns to stay silent during normal jitter, only alerting on massive outages.
+
+### ⚙️ Transparent Training Cycle
+
+To demystify the "Black Box" of AI, the dashboard explicitly shows the platform's learning state:
+- **Initial Accumulation:** The first 30 healthy requests initialize the statistical baselines.
+- **Neural Bootstrapping:** Once 30 observations are collected, the **LSTM Neural Network** triggers its first background training session.
+- **Continuous Evolution:** Every 100 new observations trigger a model refresh to follow your API's evolution.
 
 ### Health Score (0–100)
 
@@ -211,8 +225,10 @@ The global score is a weighted blend across all monitored endpoints:
 This ensures a single critically failing endpoint pulls the global score down proportionally.
 
 ### Dashboard Integration:
-- **🏠 Control Deck:** A **global health banner** at the top shows the platform-wide score, number of monitored endpoints, and active anomaly count. Updates in real-time via WebSocket.
-- **📡 Live Stream:** Each request in the log table shows a 🟢🟡🔴 health indicator.
+- **🏠 Control Deck:** A **global health banner** at the top shows the platform-wide score, number of monitored endpoints, and active anomaly count.
+- **🧠 AI Cognitive Status:** A live panel showcasing **Active AI Engines** (Welford vs. LSTM) and **Training Progress**.
+- **📊 Training Countdown:** A real-time visual progress bar tracking how many observations are needed (default: 30) before the neural brain initializes.
+- **📡 Live Stream:** Each request in the log table shows a 🟢🟡🔴 health indicator and a 🧠 icon for neural anomalies.
 - **🔬 Explorer:** Each endpoint card displays its health badge, current status, and a detailed **Active Anomalies** panel listing each detected issue.
 
 ### Accessing Health Data:

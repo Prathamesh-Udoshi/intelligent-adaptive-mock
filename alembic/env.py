@@ -25,7 +25,10 @@ from alembic import context
 # ── Make src/ modules importable ─────────────────────────────────────────────
 # Alembic runs from the project root, so we add src/ to sys.path so that
 # "from core.models import Base" resolves correctly.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(base_dir, "src"))
+sys.path.insert(0, base_dir)  # Also add root for good measure
+
 
 from core.models import Base  # noqa: E402  (must come after sys.path tweak)
 

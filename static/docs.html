@@ -613,6 +613,7 @@
             <a href="#chaos" class="toc-link" data-section="chaos">Chaos Engine</a>
             <a href="#explorer" class="toc-link" data-section="explorer">API Explorer</a>
             <a href="#contract-drift" class="toc-link" data-section="contract-drift">Contract Drift Alerts</a>
+            <a href="#ai-engine" class="toc-link" data-section="ai-engine">AI & ML Engine</a>
             <a href="#health-monitor" class="toc-link" data-section="health-monitor">Health Monitor</a>
 
             <div class="toc-label">Exports & Integrations</div>
@@ -1159,6 +1160,43 @@
                 </div>
             </section>
 
+            <!-- ── AI ENGINE ── -->
+            <section id="ai-engine" class="doc-section">
+                <h2>AI & ML Neuro-Cognitive Engine</h2>
+                <div class="section-divider"></div>
+                <p>
+                    Evolutionary Mock features a hybrid AI architecture designed to catch complex behavioral regressions 
+                    that traditional monitoring tools miss. Our <strong>Neuro-Cognitive Engine</strong> uses two distinct 
+                    layers of analysis:
+                </p>
+
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <div class="fc-icon">📊</div>
+                        <h4>Statistical Engine (Welford)</h4>
+                        <p>Provides fast, real-time detection of latency spikes and error rate jumps using adaptive 
+                           standard deviations. It creates a baseline for every unique endpoint pattern.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="fc-icon">🧠</div>
+                        <h4>Neural Engine (LSTM)</h4>
+                        <p>A deep-learning Autoencoder that understands the <em>relationship</em> between timing, size, 
+                           and payload patterns. It flags anomalies where metrics look "normal" but the "signature" is wrong.</p>
+                    </div>
+                </div>
+
+                <h3>Real-Time Training Transparency</h3>
+                <p>
+                    We believe AI should not be a "Black Box." The <strong>AI Cognitive Status</strong> panel on the 
+                    Control Deck shows you exactly what's happening under the hood:
+                </p>
+                <ul>
+                    <li><strong>Initial Accumulation:</strong> Tracking the first 30 healthy requests needed to bootstrap the engines.</li>
+                    <li><strong>Training States:</strong> Visual feedback when the platform is actively training neural weights in the background.</li>
+                    <li><strong>Active Engine Badges:</strong> Identifies which specific AI engine (Welford or LSTM) flagged a particular transaction.</li>
+                </ul>
+            </section>
+
             <!-- ── HEALTH MONITOR ── -->
             <section id="health-monitor" class="doc-section">
                 <h2>Health Monitor</h2>
@@ -1198,15 +1236,15 @@
                 </table>
 
                 <h3>What Is Monitored</h3>
-                <p>The platform monitors four signals per endpoint, each compared to a statistically-derived baseline:
+                <p>The platform monitors five primary signals per endpoint using a <strong>Dual-Engine (Statistical + Neural)</strong> architecture:
                 </p>
                 <ul>
                     <li><strong>Latency</strong> — spikes beyond a dynamic threshold from the learned mean are flagged
-                        as anomalies</li>
+                        as statistical anomalies</li>
+                    <li><strong>Neural Signatures</strong> — a deep learning LSTM Autoencoder detects pattern shifts in the overall traffic "DNA"</li>
                     <li><strong>Error Rate</strong> — jumps above 3× the baseline error rate trigger a warning</li>
                     <li><strong>Response Size</strong> — changes beyond 3× the average response size are flagged</li>
-                    <li><strong>Contract Drift</strong> — an active unresolved drift alert contributes negatively to the
-                        health score</li>
+                    <li><strong>Contract Drift</strong> — structural schema changes detected by the regression watchdog</li>
                 </ul>
 
                 <h3>Adaptive AI Thresholding</h3>
