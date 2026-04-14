@@ -316,8 +316,17 @@ class AnomalyPredictor:
 
     def get_stats(self) -> Dict[str, Any]:
         """Return predictor status for the admin dashboard."""
+        if not self._loaded:
+            mode = "warming_up"
+            msg = "Waiting for initial training (collecting baseline)..."
+        else:
+            mode = "active"
+            msg = "Monitoring traffic with LSTM Autoencoder"
+
         return {
             "model_loaded": self._loaded,
+            "detection_mode": mode,
+            "status_message": msg,
             "total_predictions": self._total_predictions,
             "total_anomalies": self._total_anomalies,
             "anomaly_rate": (

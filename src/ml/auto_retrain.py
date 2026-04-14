@@ -37,6 +37,9 @@ RETRAIN_INTERVAL_SECONDS = 60
 # Maximum training epochs per run
 MAX_EPOCHS = 50
 
+# Track global training state
+IS_TRAINING: bool = False
+
 # Track observations since last training
 _last_training_count: int = 0
 _last_training_time: Optional[datetime] = None
@@ -52,7 +55,7 @@ async def check_and_retrain() -> Optional[dict]:
     Returns:
         Training result dict if training was performed, None otherwise.
     """
-    global _last_training_count, _last_training_time
+    global _last_training_count, _last_training_time, IS_TRAINING
 
     try:
         # Check current data volume
@@ -91,22 +94,25 @@ async def check_and_retrain() -> Optional[dict]:
             f"{new_observations} new since last run)"
         )
 
-        result = await _run_training()
+        IS_TRAINING = True
+        try:
+            result = await _run_training()
 
-        if result and result.get("status") == "success":
-            _last_training_count = total_normal_observations
-            _last_training_time = datetime.utcnow()
+            if result and result.get("status") == "success":
+                _last_training_count = total_normal_observations
+                _last_training_time = datetime.utcnow()
 
-            # Hot-swap model into the running predictor
-            from core.state import lstm_predictor
-            lstm_predictor.reload_model()
+                # Hot-swap model into the running predictor
+                from core.state import lstm_predictor
+                lstm_predictor.reload_model()
 
-            logger.info(
-                f"✅ LSTM Autoencoder {'trained' if new_observations == total_normal_observations else 'retrained'} "
-                f"and hot-swapped! Threshold={result['threshold']:.6f}"
-            )
-
-        return result
+                logger.info(
+                    f"✅ LSTM Autoencoder {'trained' if new_observations == total_normal_observations else 'retrained'} "
+                    f"and hot-swapped! Threshold={result['threshold']:.6f}"
+                )
+            return result
+        finally:
+            IS_TRAINING = False
 
     except Exception as e:
         logger.error(f"❌ Auto-retrain check failed: {e}")

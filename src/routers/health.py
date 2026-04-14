@@ -96,6 +96,7 @@ async def get_all_health():
       - endpoints: per-endpoint health snapshots (latest cache)
       - detector: adaptive detector stats (learned baselines per path)
       - lstm: LSTM neural network status and training info
+      - ai_status: Transparency about which engines are currently active
     """
     global_health = health_monitor.get_global_health()
     endpoint_health = health_monitor.get_all_endpoint_health()
@@ -115,15 +116,59 @@ async def get_all_health():
             } if stats.get("count", 0) > 0 else None,
         })
 
-    # LSTM predictor stats
-    lstm_stats = lstm_predictor.get_stats() if lstm_predictor else {
-        "model_loaded": False,
-        "message": "PyTorch not installed — ML features disabled",
-    }
+    # LSTM predictor stats & Training Countdown
+    lstm_stats = {}
+    training_progress = {"status": "unknown"}
+    active_engines = ["Welford Statistical ML"]
+
+    if lstm_predictor:
+        lstm_stats = lstm_predictor.get_stats()
+        
+        # Calculate countdown from DB
+        try:
+            from ml.auto_retrain import MIN_TRAINING_OBSERVATIONS, NEW_DATA_THRESHOLD, IS_TRAINING
+            async with AsyncSessionLocal() as session:
+                res = await session.execute(
+                    select(sa_func.count()).select_from(HealthMetric)
+                    .where(HealthMetric.health_score >= 80.0)
+                )
+                total_normal = res.scalar() or 0
+            
+            if not lstm_predictor.is_active:
+                remaining = max(0, MIN_TRAINING_OBSERVATIONS - total_normal)
+                percent = min(100, round((total_normal / MIN_TRAINING_OBSERVATIONS) * 100))
+                training_progress = {
+                    "total_collected": total_normal,
+                    "target_first_train": MIN_TRAINING_OBSERVATIONS,
+                    "remaining": remaining,
+                    "percent": percent,
+                    "is_training": IS_TRAINING,
+                    "status": "collecting_initial_baseline" if remaining > 0 else "training_ready"
+                }
+            else:
+                active_engines.append("LSTM Neural Network")
+                # Progress toward NEXT retrain
+                last_trained_count = lstm_stats.get("training_sequences", 0)
+                since_last = total_normal - last_trained_count
+                training_progress = {
+                    "total_collected": total_normal,
+                    "since_last_train": since_last,
+                    "next_retrain_threshold": NEW_DATA_THRESHOLD,
+                    "percent": min(100, round((since_last / NEW_DATA_THRESHOLD) * 100)) if NEW_DATA_THRESHOLD > 0 else 100,
+                    "is_training": IS_TRAINING,
+                    "status": "improving_model"
+                }
+        except Exception as e:
+            logger.warning(f"⚠️ Could not calculate training progress: {e}")
 
     return {
         "global": global_health,
         "endpoints": enriched_endpoints,
+        "ai_status": {
+            "active_engines": active_engines,
+            "training_progress": training_progress,
+            "is_hybrid": len(active_engines) > 1
+        },
         "detector_summary": {
             "total_endpoints_tracked": len(adaptive_detector.endpoint_stats),
             "endpoints_in_learning": sum(

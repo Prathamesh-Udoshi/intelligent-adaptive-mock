@@ -424,6 +424,29 @@
                 </div>
             </div>
         </div>
+        
+        <!-- AI Cognitive Status (New!) -->
+        <div id="aiStatusPanel" style="display: none; margin-bottom: 24px;">
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                <div class="panel" style="padding: 16px; border: 1px solid rgba(164, 142, 255, 0.1); background: rgba(164, 142, 255, 0.02);">
+                    <div style="font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; font-weight: 800; margin-bottom: 10px;">Active AI Engines</div>
+                    <div id="activeEnginesList" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <!-- Dynamic Badge -->
+                    </div>
+                </div>
+                
+                <div class="panel" style="padding: 16px; border: 1px solid rgba(164, 142, 255, 0.1); background: rgba(164, 142, 255, 0.02); grid-column: span 2;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div style="font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">LSTM Training Progress</div>
+                        <div id="trainingStatusText" style="font-size: 10px; font-family: 'JetBrains Mono'; color: #888;">0/30 Observations</div>
+                    </div>
+                    <div style="height: 6px; background: rgba(255,255,255,0.05); border-radius: 10px; overflow: hidden;">
+                        <div id="trainingProgressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), #00d4ff); transition: width 1s ease;"></div>
+                    </div>
+                    <div id="trainingCountdownText" style="font-size: 11px; color: #555; margin-top: 8px; font-style: italic;">Collect more traffic to initialize neural weights...</div>
+                </div>
+            </div>
+        </div>
 
         <div class="grid">
             <!-- Left Panel: Controls -->
@@ -880,7 +903,7 @@
                 await loadProfiles(data.active_chaos_profile);
                 await loadEndpoints();
                 // Fetch health banner after config is loaded
-                authedFetch('/admin/health/global').then(r => r.json()).then(updateHealthBanner).catch(() => { });
+                authedFetch('/admin/health').then(r => r.json()).then(updateHealthBanner).catch(() => { });
                 // Fetch AI mock status
                 authedFetch('/admin/ai-config').then(r => r.json()).then(updateAiBadge).catch(() => { });
             } catch (e) { }
@@ -1152,15 +1175,16 @@
         }
 
         // --- Health Banner ---
-        function updateHealthBanner(health) {
+        function updateHealthBanner(data) {
+            const health = data.global || data; // Handle both global-only and full health response
             const banner = document.getElementById('healthBanner');
-            if (!health || health.endpoints_monitored === 0) {
+            if (!health || (health.endpoints_monitored === 0 && !data.ai_status)) {
                 banner.style.display = 'none';
                 return;
             }
             banner.style.display = 'block';
 
-            const score = Math.round(health.score);
+            const score = Math.round(health.score || health.health_score || 100);
             const icon = health.status === 'healthy' ? '🟢' : health.status === 'degraded' ? '🟡' : '🔴';
             const color = health.status === 'healthy' ? '#5cb85c' : health.status === 'degraded' ? '#f0ad4e' : '#ff4757';
             const subtext = health.status === 'healthy' ? 'All systems operational'
@@ -1175,10 +1199,10 @@
             scoreEl.textContent = score;
             scoreEl.style.color = color;
 
-            document.getElementById('healthEndpoints').textContent = health.endpoints_monitored;
+            document.getElementById('healthEndpoints').textContent = health.endpoints_monitored || 0;
             const anomalyEl = document.getElementById('healthAnomalies');
-            anomalyEl.textContent = health.anomaly_count;
-            anomalyEl.style.color = health.anomaly_count > 0 ? '#ff4757' : '#888';
+            anomalyEl.textContent = health.anomaly_count || 0;
+            anomalyEl.style.color = (health.anomaly_count || 0) > 0 ? '#ff4757' : '#888';
 
             document.getElementById('healthSensitivity').textContent = health.avg_sensitivity || '3.0';
 
@@ -1189,7 +1213,65 @@
             // Pulse animation for degraded/critical
             banner.style.borderColor = health.status === 'healthy' ? 'rgba(255,255,255,0.05)' : color + '44';
             banner.style.boxShadow = health.status !== 'healthy' ? `0 0 20px ${color}22` : 'none';
+
+            // --- AI STATUS (New!) ---
+            const aiPanel = document.getElementById('aiStatusPanel');
+            if (data.ai_status) {
+                aiPanel.style.display = 'block';
+                
+                // Update Engines List
+                const enginesList = document.getElementById('activeEnginesList');
+                enginesList.innerHTML = '';
+                data.ai_status.active_engines.forEach(engine => {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge badge-ai';
+                    badge.style.fontSize = '9px';
+                    badge.style.padding = '4px 10px';
+                    badge.textContent = engine;
+                    enginesList.appendChild(badge);
+                });
+
+                // Update Progress
+                const progress = data.ai_status.training_progress;
+                if (progress) {
+                    const bar = document.getElementById('trainingProgressBar');
+                    const text = document.getElementById('trainingStatusText');
+                    const countdown = document.getElementById('trainingCountdownText');
+                    
+                    bar.style.width = progress.percent + '%';
+                    
+                    if (progress.status === 'collecting_initial_baseline') {
+                        text.textContent = `${progress.total_collected} / ${progress.target_first_train} Observations`;
+                        countdown.textContent = `Need ${progress.remaining} more healthy requests to initialize Neuro-Cognitive Model...`;
+                        countdown.style.color = '#777';
+                    } else if (progress.status === 'training_ready' || progress.is_training) {
+                        text.textContent = progress.is_training ? `Training In Progress...` : `Baseline Complete`;
+                        countdown.textContent = progress.is_training ? `Optimizing neural weights (PyTorch)...` : `AI Brain is ready. Triggering first training cycle...`;
+                        countdown.style.color = 'var(--accent)';
+                        if (progress.is_training) bar.style.animation = 'pulse 1s infinite alternate';
+                    } else if (progress.status === 'improving_model') {
+                        text.textContent = `Continuous Improvement Active`;
+                        countdown.textContent = `Model is live. Learning from new traffic patterns (${progress.percent}% to next refinement).`;
+                        countdown.style.color = '#5cb85c';
+                        bar.style.animation = 'none';
+                    }
+                }
+            } else {
+                aiPanel.style.display = 'none';
+            }
         }
+
+        // Add CSS pulse for training
+        const style = document.createElement('style');
+        style.textContent = '@keyframes pulse { from { opacity: 0.5; } to { opacity: 1; } }';
+        document.head.appendChild(style);
+
+        // Refresh health data periodically to keep countdown updated
+        setInterval(() => {
+            if (window.__authToken) {
+                authedFetch('/admin/health').then(r => r.json()).then(updateHealthBanner).catch(() => { });
+            }
+        }, 3000); // More frequent during demo (3s)
 
         // Health banner is now fetched inside syncConfig() after auth is ready.
     </script>
