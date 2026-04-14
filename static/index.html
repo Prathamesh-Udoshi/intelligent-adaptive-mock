@@ -424,26 +424,39 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- AI Cognitive Status (New!) -->
         <div id="aiStatusPanel" style="display: none; margin-bottom: 24px;">
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
-                <div class="panel" style="padding: 16px; border: 1px solid rgba(164, 142, 255, 0.1); background: rgba(164, 142, 255, 0.02);">
-                    <div style="font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; font-weight: 800; margin-bottom: 10px;">Active AI Engines</div>
+                <div class="panel"
+                    style="padding: 16px; border: 1px solid rgba(164, 142, 255, 0.1); background: rgba(164, 142, 255, 0.02);">
+                    <div
+                        style="font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; font-weight: 800; margin-bottom: 10px;">
+                        Active AI Engines</div>
                     <div id="activeEnginesList" style="display: flex; flex-wrap: wrap; gap: 8px;">
                         <!-- Dynamic Badge -->
                     </div>
                 </div>
-                
-                <div class="panel" style="padding: 16px; border: 1px solid rgba(164, 142, 255, 0.1); background: rgba(164, 142, 255, 0.02); grid-column: span 2;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <div style="font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">LSTM Training Progress</div>
-                        <div id="trainingStatusText" style="font-size: 10px; font-family: 'JetBrains Mono'; color: #888;">0/30 Observations</div>
+
+                <div class="panel"
+                    style="padding: 16px; border: 1px solid rgba(164, 142, 255, 0.1); background: rgba(164, 142, 255, 0.02); grid-column: span 2;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div
+                            style="font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">
+                            LSTM Training Progress</div>
+                        <div id="trainingStatusText"
+                            style="font-size: 10px; font-family: 'JetBrains Mono'; color: #888;">0/30 Observations</div>
                     </div>
-                    <div style="height: 6px; background: rgba(255,255,255,0.05); border-radius: 10px; overflow: hidden;">
-                        <div id="trainingProgressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), #00d4ff); transition: width 1s ease;"></div>
+                    <div
+                        style="height: 6px; background: rgba(255,255,255,0.05); border-radius: 10px; overflow: hidden;">
+                        <div id="trainingProgressBar"
+                            style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), #00d4ff); transition: width 1s ease;">
+                        </div>
                     </div>
-                    <div id="trainingCountdownText" style="font-size: 11px; color: #555; margin-top: 8px; font-style: italic;">Collect more traffic to initialize neural weights...</div>
+                    <div id="trainingCountdownText"
+                        style="font-size: 11px; color: #555; margin-top: 8px; font-style: italic;">Collect more traffic
+                        to initialize neural weights...</div>
                 </div>
             </div>
         </div>
@@ -617,7 +630,7 @@
                                     <th>Status</th>
                                     <th>Latency</th>
                                     <th>Health</th>
-                                    <th>Drift</th>
+                                    <th>Neuro-Insights</th>
                                 </tr>
                             </thead>
                             <tbody id="logBody"></tbody>
@@ -1113,16 +1126,19 @@
                     const row = document.createElement("tr");
                     const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
                     const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
-                    const driftHtml = log.has_drift ? `<span title="Contract Drift Detected" style="cursor:help;">&#x1F6A8;</span>` : '';
-                    const healthDot = log.health === 'critical' ? '&#x1F534;' : log.health === 'degraded' ? '&#x1F7E1;' : '&#x1F7E2;';
+                    const lstmHtml = log.lstm_anomaly ? `<span title="LSTM Neural Anomaly Detected" style="filter: drop-shadow(0 0 5px var(--accent));">🧠</span>` : '';
+                    const driftHtml = log.has_drift ? `<span title="Contract Drift Detected">🚨</span>` : '';
+                    const healthDot = log.health === 'critical' ? '🔴' : log.health === 'degraded' ? '🟡' : '🟢';
+                    const insightHtml = log.narrative ? `<div style="font-size: 10px; color: #aaa; font-style: italic; max-width: 200px; line-height: 1.2;">${log.narrative}</div>` : (log.status >= 400 ? 'Error detected' : 'Normal traffic pattern');
+
                     row.innerHTML = `
                         <td>${formatTime(log.time)}</td>
                         <td><span class="badge ${badgeClass}">${log.type}</span></td>
                         <td>${log.method} ${log.path}</td>
                         <td class="${statusClass}">${log.status}</td>
                         <td>${log.latency} ms</td>
-                        <td style="text-align: center;">${healthDot}</td>
-                        <td style="text-align: center;">${driftHtml}</td>
+                        <td style="text-align: center;">${healthDot} ${lstmHtml} ${driftHtml}</td>
+                        <td>${insightHtml}</td>
                     `;
                     if (logBody.firstChild) logBody.insertBefore(row, logBody.firstChild);
                     else logBody.appendChild(row);
@@ -1143,16 +1159,19 @@
                 const row = document.createElement("tr");
                 const statusClass = (log.status >= 200 && log.status < 300) ? "status-ok" : "status-err";
                 const badgeClass = log.type === "Mock" ? "badge-ai" : "badge-real";
-                const driftHtml = log.has_drift ? `<span title="Contract Drift Detected" style="cursor:help;">🚨</span>` : '';
+                const lstmHtml = log.lstm_anomaly ? `🧠` : '';
+                const driftHtml = log.has_drift ? `🚨` : '';
                 const healthDot = log.health === 'critical' ? '🔴' : log.health === 'degraded' ? '🟡' : '🟢';
+                const insightHtml = log.narrative ? `<div style="font-size: 10px; color: #aaa; font-style: italic; max-width: 200px; line-height: 1.2;">${log.narrative}</div>` : '—';
+
                 row.innerHTML = `
                     <td>${formatTime(log.time)}</td>
                     <td><span class="badge ${badgeClass}">${log.type}</span></td>
                     <td>${log.method} ${log.path}</td>
                     <td class="${statusClass}">${log.status}</td>
                     <td>${log.latency} ms</td>
-                    <td style="text-align: center;">${healthDot}</td>
-                    <td style="text-align: center;">${driftHtml}</td>
+                    <td style="text-align: center;">${healthDot} ${lstmHtml} ${driftHtml}</td>
+                    <td>${insightHtml}</td>
                 `;
                 logBody.appendChild(row);
             });
@@ -1218,7 +1237,7 @@
             const aiPanel = document.getElementById('aiStatusPanel');
             if (data.ai_status) {
                 aiPanel.style.display = 'block';
-                
+
                 // Update Engines List
                 const enginesList = document.getElementById('activeEnginesList');
                 enginesList.innerHTML = '';
@@ -1237,9 +1256,9 @@
                     const bar = document.getElementById('trainingProgressBar');
                     const text = document.getElementById('trainingStatusText');
                     const countdown = document.getElementById('trainingCountdownText');
-                    
+
                     bar.style.width = progress.percent + '%';
-                    
+
                     if (progress.status === 'collecting_initial_baseline') {
                         text.textContent = `${progress.total_collected} / ${progress.target_first_train} Observations`;
                         countdown.textContent = `Need ${progress.remaining} more healthy requests to initialize Neuro-Cognitive Model...`;
@@ -1271,7 +1290,7 @@
             if (window.__authToken) {
                 authedFetch('/admin/health').then(r => r.json()).then(updateHealthBanner).catch(() => { });
             }
-        }, 3000); // More frequent during demo (3s)
+        }, 10000); // More frequent during demo (3s)
 
         // Health banner is now fetched inside syncConfig() after auth is ready.
     </script>

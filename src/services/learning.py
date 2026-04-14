@@ -81,7 +81,9 @@ async def add_to_logs(method: str, path: str, status: int, latency: int, type: s
             "type": type,
             "has_drift": has_drift,
             "health": health_info.get("status", "healthy") if health_info else "healthy",
-            "health_score": health_info.get("health_score", 100) if health_info else 100
+            "health_score": health_info.get("health_score", 100) if health_info else 100,
+            "lstm_anomaly": health_info.get("lstm_anomaly", False) if health_info else False,
+            "narrative": health_info.get("human_narrative", "") if health_info else ""
         }
         RECENT_LOGS.insert(0, log_entry)
         if len(RECENT_LOGS) > 50:

@@ -216,7 +216,7 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
                 )
                 has_active_drift_for_health = drift_check.scalars().first() is not None
 
-        health_result = health_monitor.evaluate_request(
+        health_result = await health_monitor.evaluate_request(
             endpoint_id=endpoint.id,
             latency_ms=latency_ms,
             status_code=proxy_resp.status_code,

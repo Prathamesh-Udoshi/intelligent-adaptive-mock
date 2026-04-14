@@ -80,6 +80,7 @@ def _format_metric(m: HealthMetric) -> dict:
         "latency_anomaly": m.latency_anomaly,
         "error_spike": m.error_spike,
         "size_anomaly": m.size_anomaly,
+        "lstm_anomaly": m.lstm_anomaly,
         "anomaly_reasons": m.anomaly_reasons,
     }
 
