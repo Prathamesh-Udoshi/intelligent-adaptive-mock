@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.join(base_dir, "src"))
 sys.path.insert(0, base_dir)  # Also add root for good measure
 
 
-from core.models import Base  # noqa: E402  (must come after sys.path tweak)
+from src.core.models import Base  # noqa: E402  (must come after sys.path tweak)
 
 # ── Alembic config ────────────────────────────────────────────────────────────
 config = context.config
