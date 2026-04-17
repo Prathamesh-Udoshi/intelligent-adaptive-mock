@@ -94,7 +94,9 @@ async def add_to_logs(method: str, path: str, status: int, latency: int, type: s
     if health_info and health_info.get("anomalies"):
         broadcast_data["health_alert"] = health_info
     broadcast_data["global_health"] = health_monitor.get_global_health()
+    
     await manager.broadcast(broadcast_data)
+    logger.info(f"📡 Broadcasted log for {method} {path} to {len(manager.active_connections)} dashboard client(s)")
 
 
 # ── Background Tasks ──

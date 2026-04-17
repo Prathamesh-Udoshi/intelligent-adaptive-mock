@@ -378,11 +378,11 @@
                 <div style="display: flex; align-items: center; gap: 14px;">
                     <span id="healthIcon" style="font-size: 28px;">🟢</span>
                     <div>
-                        <div
-                            style="font-size: 13px; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 1px;">
-                            Platform Health</div>
-                        <div id="healthSubtext" style="font-size: 11px; color: #888; margin-top: 2px;">All systems
-                            operational</div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="font-size: 13px; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 1px;">Platform Health</div>
+                            <span id="wsStatusBadge" style="font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 4px; background: rgba(255, 71, 87, 0.1); color: #ff4757; border: 1px solid rgba(255, 71, 87, 0.2); transition: all 0.3s ease;">WS DISCONNECTED</span>
+                        </div>
+                        <div id="healthSubtext" style="font-size: 11px; color: #888; margin-top: 2px;">All systems operational</div>
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 20px;">
@@ -895,17 +895,41 @@
                     select.appendChild(opt);
                 });
                 if (endpoints.length > 0 && !currentVal) await loadEndpointDetails(endpoints[0].id);
-            } catch (e) { }
+            } catch (e) {
+                console.error("Failed to load endpoints:", e);
+                // Show a toast or status message if the select is empty
+                const select = document.getElementById("endpointSelect");
+                if (select.innerHTML === "") {
+                    select.innerHTML = '<option disabled>Error loading endpoints</option>';
+                }
+            }
         }
 
         async function syncConfig() {
             try {
                 const res = await authedFetch('/admin/config');
+                if (!res.ok) {
+                    console.error(`❌ Sync failed: ${res.status} ${res.statusText}`);
+                    if (res.status === 401) window.location.href = '/login';
+                    return;
+                }
                 const data = await res.json();
                 slider.value = data.chaos_level || 0;
                 output.innerHTML = data.chaos_level || 0;
                 learningToggle.checked = data.learning_mode;
-                updateModeUI(data.platform_mode);
+                
+                // Update platform mode UI
+                const modeProxy = document.getElementById('modeProxy');
+                const modeMock = document.getElementById('modeMock');
+                if (modeProxy && modeMock) {
+                    if (data.platform_mode === 'mock') {
+                        modeMock.classList.add('active');
+                        modeProxy.classList.remove('active');
+                    } else {
+                        modeProxy.classList.add('active');
+                        modeMock.classList.remove('active');
+                    }
+                }
 
                 if (data.target_url) {
                     document.getElementById('targetUrlInput').value = data.target_url;
@@ -915,11 +939,16 @@
 
                 await loadProfiles(data.active_chaos_profile);
                 await loadEndpoints();
+                
                 // Fetch health banner after config is loaded
                 authedFetch('/admin/health').then(r => r.json()).then(updateHealthBanner).catch(() => { });
                 // Fetch AI mock status
                 authedFetch('/admin/ai-config').then(r => r.json()).then(updateAiBadge).catch(() => { });
-            } catch (e) { }
+            } catch (e) {
+                console.error("❌ Error during dashboard sync:", e);
+                const overlay = document.getElementById('authOverlay');
+                if (overlay) overlay.style.display = 'none';
+            }
         }
 
         function updateAiBadge(cfg) {
@@ -1116,8 +1145,21 @@
             socket._isUnauthed = !token;  // mark so we know to upgrade later
             _activeSocket = socket;
 
+            socket.onopen = () => {
+                const badge = document.getElementById('wsStatusBadge');
+                if (badge) {
+                    badge.textContent = 'WS LIVE';
+                    badge.style.background = 'rgba(92, 184, 92, 0.1)';
+                    badge.style.color = '#5cb85c';
+                    badge.style.borderColor = 'rgba(92, 184, 92, 0.2)';
+                }
+                console.log("📡 WebSocket connected to:", wsUrl);
+            };
+
             socket.onmessage = function (event) {
                 const message = JSON.parse(event.data);
+                console.log("📩 WebSocket message:", message.type, message.data);
+                
                 if (message.type === 'initial') {
                     renderLogs(message.data);
                     message.data.slice().reverse().forEach(log => updateChart(log.latency, log.type));
@@ -1145,11 +1187,28 @@
                     if (logBody.children.length > 50) logBody.removeChild(logBody.lastChild);
                     updateChart(log.latency, log.type);
                     if (message.global_health) updateHealthBanner(message.global_health);
+                    
+                    const exists = Object.values(window.endpointData).some(ed => ed.path === log.path && ed.method === log.method);
+                    if (!exists && log.path && log.method) {
+                        console.log(`🚀 New endpoint discovered: ${log.method} ${log.path} - refreshing list...`);
+                        loadEndpoints();
+                    }
                 }
             };
             socket.onclose = () => {
+                const badge = document.getElementById('wsStatusBadge');
+                if (badge) {
+                    badge.textContent = 'WS DISCONNECTED';
+                    badge.style.background = 'rgba(255, 71, 87, 0.1)';
+                    badge.style.color = '#ff4757';
+                    badge.style.borderColor = 'rgba(255, 71, 87, 0.2)';
+                }
                 if (_activeSocket === socket) _activeSocket = null;
+                console.warn("🔌 WebSocket closed. Retrying in 3s...");
                 _wsRetryTimer = setTimeout(connectWebSocket, 3000);
+            };
+            socket.onerror = (err) => {
+                console.error("💥 WebSocket Error:", err);
             };
         }
 
@@ -1310,44 +1369,49 @@
                     const navUser = document.getElementById('nav-user');
 
                     if (user) {
-                        // 1. Store token globally for authedFetch & WebSocket
-                        window.__authToken = await user.getIdToken();
+                        try {
+                            // 1. Store token globally for authedFetch & WebSocket
+                            window.__authToken = await user.getIdToken();
 
-                        // 2. Refresh before expiry (Firebase tokens last 1 hour)
-                        setInterval(async () => {
-                            window.__authToken = await user.getIdToken(true);
-                        }, 55 * 60 * 1000);
+                            // 2. Refresh before expiry
+                            setInterval(async () => {
+                                window.__authToken = await user.getIdToken(true);
+                            }, 55 * 60 * 1000);
 
-                        // 3. Hide the loading overlay
-                        if (overlay) overlay.style.display = 'none';
+                            // 3. Hide overlay & Init
+                            if (overlay) overlay.style.display = 'none';
+                            if (navUser) {
+                                navUser.style.display = "flex";
+                                navUser.style.alignItems = "center";
+                                navUser.style.gap = "15px";
+                                navUser.innerHTML = `
+                                    <a href="/admin/docs" class="nav-link" style="margin: 0; padding: 0;">API Docs</a>
+                                    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                        <span style="font-size: 11px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; line-height: 1;">Signed In As</span>
+                                        <span style="font-size: 13px; color: #fff; font-weight: 600; line-height: 1;">${user.displayName || user.email.split('@')[0]}</span>
+                                    </div>
+                                    <button id="signOutBtn" class="nav-link" style="padding: 6px 16px; background: rgba(255, 71, 87, 0.1); color: #ff4757; border: 1px solid rgba(255, 71, 87, 0.2); border-radius: 8px; font-weight: 800; cursor: pointer; margin-left: 5px;">Sign Out</button>
+                                `;
+                                document.getElementById('signOutBtn').onclick = () => signOut(auth).then(() => window.location.href = '/login');
+                            }
 
-                        // 4. Populate nav user info
-                        if (navUser) {
-                            navUser.style.display = "flex";
-                            navUser.style.alignItems = "center";
-                            navUser.style.gap = "15px";
-                            navUser.innerHTML = `
-                                <a href="/admin/docs" class="nav-link" style="margin: 0; padding: 0;">API Docs</a>
-                                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                    <span style="font-size: 11px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; line-height: 1;">Signed In As</span>
-                                    <span style="font-size: 13px; color: #fff; font-weight: 600; line-height: 1;">${user.displayName || user.email.split('@')[0]}</span>
-                                </div>
-                                <button id="signOutBtn" class="nav-link" style="padding: 6px 16px; background: rgba(255, 71, 87, 0.1); color: #ff4757; border: 1px solid rgba(255, 71, 87, 0.2); border-radius: 8px; font-weight: 800; cursor: pointer; margin-left: 5px;">Sign Out</button>
-                            `;
-                            document.getElementById('signOutBtn').onclick = () => signOut(auth).then(() => window.location.href = '/login');
+                            if (window.__initDashboard) window.__initDashboard();
+                            connectWebSocket();
+                        } catch (e) {
+                            console.error("❌ Post-auth setup failed:", e);
+                            if (overlay) overlay.style.display = 'none';
                         }
-
-                        // 5. NOW load dashboard data — token is ready
-                        if (window.__initDashboard) window.__initDashboard();
-
-                        // 6. Connect WebSocket after token is available
-                        connectWebSocket();
                     } else {
                         window.location.href = '/login';
                     }
                 });
             } catch (e) {
-                console.error("Auth initialization failed", e);
+                console.error("❌ Auth initialization failed:", e);
+                const overlay = document.getElementById('authOverlay');
+                if (overlay) {
+                    overlay.innerHTML = `<div style="color:#ff4757; font-weight:800;">Auth Error</div><div style="color:#666; font-size:12px; margin-top:8px;">${e.message}</div>`;
+                    setTimeout(() => overlay.style.display = 'none', 3000);
+                }
             }
         }
         initAuth();

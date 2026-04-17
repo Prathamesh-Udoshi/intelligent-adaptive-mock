@@ -42,21 +42,26 @@ async def catch_all(request: Request, path: str, background_tasks: BackgroundTas
     method = request.method
     normalized = normalize_path(f"/{path}")
 
-    # ── Guard 1: Never proxy or learn /admin/* paths ──────────────────────────
-    # Admin routes that don't match a named handler (e.g. GET to a POST-only
-    # admin endpoint) must 404 cleanly — not fall through to the proxy and get
-    # stored as learned endpoints.
-    if normalized.startswith("/admin/"):
-        raise HTTPException(status_code=404, detail="Not found")
+    # ── Guard 1: Never proxy or learn internal platform routes ───────────────
+    # We only block routes that are explicitly defined in our admin routers.
+    # This allows users to mock their own APIs even if they start with /admin/.
+    internal_admin_prefixes = [
+        "/admin/dashboard", "/admin/config", "/admin/target", "/admin/chaos",
+        "/admin/learning", "/admin/mode", "/admin/ai-config", "/admin/logs",
+        "/admin/endpoints", "/admin/drift-alerts", "/admin/health",
+        "/admin/export-types", "/admin/explorer", "/admin/export-openapi",
+        "/admin/swagger-ui", "/admin/docs", "/admin/guide"
+    ]
+    if any(normalized.startswith(prefix) for prefix in internal_admin_prefixes):
+        raise HTTPException(status_code=404, detail="Internal Platform Route")
 
     # ── Guard 2: Refuse to proxy when no target is configured ─────────────────
-    # If TARGET_URL is empty the platform is not set up.  Random browser
-    # navigation would otherwise create garbage endpoint rows in the database.
     if not state.TARGET_URL:
         raise HTTPException(
             status_code=503,
             detail="No target URL configured. Sign in to the console and set one.",
         )
+
 
     # Mode Selection: Header > Global State
     mock_header = request.headers.get("X-Mock-Enabled")
@@ -283,7 +288,6 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
         profile = CHAOS_PROFILES.get(profile_key, CHAOS_PROFILES["normal"])
 
         # Apply Chaos Level
-        # Respect chaos_level > 0 regardless of is_active flag so the UI slider always works
         effective_chaos = chaos.chaos_level if chaos and chaos.chaos_level > 0 else 0
         if profile.get("global_chaos", 0) > 0:
             effective_chaos = max(effective_chaos, profile["global_chaos"])
@@ -295,9 +299,13 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
             except: pass
 
         # Decide Error vs Success
-        # Base error rate from learned behavior + chaos-injected errors
-        # Chaos uses quadratic scaling: chaos=30→4.5%, chaos=50→12.5%, chaos=80→32%
-        error_prob = behavior.error_rate if behavior else 0
+        # In Failover mode (backend down), we respect the learned error rate.
+        # In explicit Mock mode, we ONLY inject errors if Chaos is enabled.
+        if is_failover:
+            error_prob = behavior.error_rate if behavior else 0
+        else:
+            error_prob = 0.0 # Start clean in mock mode
+            
         chaos_error_prob = (effective_chaos / 100.0) ** 2 * 0.5
         error_prob = min(error_prob + chaos_error_prob, 0.5)
 
@@ -327,10 +335,23 @@ async def generate_endpoint_mock(behavior, chaos, normalized, request, is_failov
         if behavior and behavior.status_code_distribution:
             codes = list(behavior.status_code_distribution.keys())
             probs = list(behavior.status_code_distribution.values())
-            try:
-                status_code = int(random.choices(codes, weights=probs)[0])
-            except:
-                status_code = 200
+            
+            # In explicit Mock mode, if we have a successful code (2xx), use it.
+            # This prevents learned 404s from broken backends from ruining the mock experience.
+            if not is_failover:
+                success_codes = [c for c in codes if c.startswith("2")]
+                if success_codes:
+                    # Pick from learned successes if there are multiple
+                    success_probs = [behavior.status_code_distribution[c] for c in success_codes]
+                    status_code = int(random.choices(success_codes, weights=success_probs)[0])
+                else:
+                    status_code = 200
+            else:
+                # In Failover mode, try to match the real distribution exactly
+                try:
+                    status_code = int(random.choices(codes, weights=probs)[0])
+                except:
+                    status_code = 200
 
         # Generate Body
         if profile.get("corrupt_responses"):

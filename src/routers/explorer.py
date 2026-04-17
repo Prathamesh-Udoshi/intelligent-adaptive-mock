@@ -19,11 +19,22 @@ router = APIRouter()
 
 
 @router.get("/admin/explorer/overview", dependencies=[Depends(require_auth)])
-async def get_explorer_overview(search: Optional[str] = None, limit: int = 10, offset: int = 0):
+async def get_explorer_overview(
+    search: Optional[str] = None, 
+    limit: int = 10, 
+    offset: int = 0,
+    page: Optional[int] = None,
+    page_size: Optional[int] = None,
+    q: Optional[str] = None
+):
     """
     Consolidated endpoint for the Explorer page with pagination and search.
-    Returns a subset of endpoints with stats and drift alerts.
+    Supports both limit/offset (API style) and page/page_size (UI style).
     """
+    # Map UI params to API params if present
+    if q: search = q
+    if page_size: limit = page_size
+    if page and page_size: offset = (page - 1) * page_size
     async with AsyncSessionLocal() as session:
         # Build base query
         query = select(Endpoint)

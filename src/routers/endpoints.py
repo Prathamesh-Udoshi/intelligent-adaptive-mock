@@ -119,7 +119,17 @@ async def list_endpoints():
                 seen[key] = ep.id
                 unique_endpoints.append(ep)
 
-        return unique_endpoints
+        return [
+            {
+                "id": ep.id,
+                "method": ep.method,
+                "path_pattern": ep.path_pattern,
+                "target_url": ep.target_url,
+                "user_id": ep.user_id,
+                "created_at": ep.created_at.isoformat() if ep.created_at else None
+            }
+            for ep in unique_endpoints
+        ]
 
 
 @router.get("/admin/endpoints/{endpoint_id}/stats", dependencies=[Depends(require_auth)])

@@ -16,6 +16,7 @@ Column notes:
 import datetime
 
 from sqlalchemy import Column, Integer, String, Float, JSON, Boolean, DateTime, ForeignKey, func, UniqueConstraint
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -33,6 +34,7 @@ class Endpoint(Base):
     method      = Column(String, nullable=False)
     path_pattern = Column(String, nullable=False)   # Normalised, e.g. /users/{id}
     target_url  = Column(String, nullable=False)
+    user_id     = Column(String, default="dev", nullable=False)
     created_at  = Column(DateTime, default=_utcnow, nullable=False)
 
     # Prevent duplicate (method, path_pattern) rows from race conditions
@@ -56,11 +58,11 @@ class EndpointBehavior(Base):
 
     # Error rates and status codes
     error_rate              = Column(Float, default=0.0)
-    status_code_distribution = Column(JSON, nullable=True)
+    status_code_distribution = Column(JSON().with_variant(postgresql.JSONB(), "postgresql"), nullable=True)
 
     # Schema info
-    response_schema = Column(JSON, nullable=True)
-    request_schema  = Column(JSON, nullable=True)
+    response_schema = Column(JSON().with_variant(postgresql.JSONB(), "postgresql"), nullable=True)
+    request_schema  = Column(JSON().with_variant(postgresql.JSONB(), "postgresql"), nullable=True)
 
     endpoint = relationship("Endpoint", back_populates="behavior")
 
@@ -88,7 +90,7 @@ class ContractDrift(Base):
     drift_score  = Column(Float, default=0.0)      # 0–100 severity score
     drift_summary = Column(String, nullable=True)   # Human-readable summary
     drift_narration = Column(String, nullable=True) # LLM-generated detailed report
-    drift_details = Column(JSON, nullable=True)
+    drift_details = Column(JSON().with_variant(postgresql.JSONB(), "postgresql"), nullable=True)
 
     # Status tracking
     is_resolved = Column(Boolean, default=False)
@@ -119,6 +121,6 @@ class HealthMetric(Base):
 
     # Overall health score for this observation (0–100, 100=healthy)
     health_score    = Column(Float, default=100.0)
-    anomaly_reasons = Column(JSON, nullable=True)
+    anomaly_reasons = Column(JSON().with_variant(postgresql.JSONB(), "postgresql"), nullable=True)
 
     endpoint = relationship("Endpoint")
