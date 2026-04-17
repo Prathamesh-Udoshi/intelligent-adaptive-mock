@@ -125,7 +125,6 @@ async def list_endpoints():
                 "method": ep.method,
                 "path_pattern": ep.path_pattern,
                 "target_url": ep.target_url,
-                "user_id": ep.user_id,
                 "created_at": ep.created_at.isoformat() if ep.created_at else None
             }
             for ep in unique_endpoints

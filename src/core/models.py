@@ -34,7 +34,6 @@ class Endpoint(Base):
     method      = Column(String, nullable=False)
     path_pattern = Column(String, nullable=False)   # Normalised, e.g. /users/{id}
     target_url  = Column(String, nullable=False)
-    user_id     = Column(String, default="dev", nullable=False)
     created_at  = Column(DateTime, default=_utcnow, nullable=False)
 
     # Prevent duplicate (method, path_pattern) rows from race conditions
